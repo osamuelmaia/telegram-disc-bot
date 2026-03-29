@@ -71,6 +71,16 @@ export async function activateTenantAction(id: string) {
   revalidatePath('/tenants');
 }
 
+export async function updateTenantSettingsAction(id: string, formData: FormData) {
+  const feeStr = formData.get('feePercent') as string;
+  const daysStr = formData.get('cardReleaseDays') as string;
+  await api.updateTenantSettings(id, {
+    feePercent: feeStr ? parseFloat(feeStr) / 100 : undefined,
+    cardReleaseDays: daysStr ? parseInt(daysStr) : undefined,
+  });
+  revalidatePath('/tenants');
+}
+
 export async function approveWithdrawalAction(id: string) {
   await api.approveWithdrawal(id);
   revalidatePath('/withdrawals');

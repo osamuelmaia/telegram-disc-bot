@@ -128,6 +128,7 @@ model Tenant {
   profileCompleted Boolean  @default(false)
 
   platformFeePercent Decimal? @db.Decimal(5, 4)
+  cardReleaseDays    Int      @default(30)
 
   bot                   Bot?
   products              Product[]

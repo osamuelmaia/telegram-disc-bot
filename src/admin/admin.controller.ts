@@ -205,6 +205,14 @@ export class AdminController {
     return this.adminService.updateTenantFee(id, body.feePercent);
   }
 
+  @Patch('tenants/:id/settings')
+  updateTenantSettings(
+    @Param('id') id: string,
+    @Body() body: { feePercent?: number; cardReleaseDays?: number },
+  ) {
+    return this.adminService.updateTenantSettings(id, body);
+  }
+
   // ── Platform config ────────────────────────────────────────────────────────
 
   @Get('config')

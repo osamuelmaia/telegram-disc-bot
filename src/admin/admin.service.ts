@@ -327,8 +327,8 @@ export class AdminService {
         take: pagination.take,
         select: {
           id: true, name: true, email: true, status: true,
-          platformFeePercent: true, createdAt: true,
-          _count: { select: { products: true, orders: true, endUsers: true } },
+          platformFeePercent: true, cardReleaseDays: true, createdAt: true,
+          _count: { select: { products: true, orders: true, subscriptions: true, endUsers: true } },
         },
       }),
       this.prisma.tenant.count({ where }),
@@ -366,6 +366,17 @@ export class AdminService {
       where: { id },
       data: { platformFeePercent: feePercent },
       select: { id: true, name: true, platformFeePercent: true },
+    });
+  }
+
+  updateTenantSettings(id: string, dto: { feePercent?: number; cardReleaseDays?: number }) {
+    const data: Record<string, unknown> = {};
+    if (dto.feePercent !== undefined) data.platformFeePercent = dto.feePercent;
+    if (dto.cardReleaseDays !== undefined) data.cardReleaseDays = dto.cardReleaseDays;
+    return this.prisma.tenant.update({
+      where: { id },
+      data,
+      select: { id: true, name: true, platformFeePercent: true, cardReleaseDays: true },
     });
   }
 

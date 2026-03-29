@@ -135,10 +135,13 @@ export const getTenantById = (id: string) =>
   apiFetch<Tenant>(`/admin/tenants/${id}`);
 
 export const suspendTenant = (id: string) =>
-  apiFetch<void>(`/admin/tenants/${id}/suspend`, { method: 'POST' });
+  apiFetch<void>(`/admin/tenants/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status: 'SUSPENDED' }) });
 
 export const activateTenant = (id: string) =>
-  apiFetch<void>(`/admin/tenants/${id}/activate`, { method: 'POST' });
+  apiFetch<void>(`/admin/tenants/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status: 'ACTIVE' }) });
+
+export const updateTenantSettings = (id: string, body: { feePercent?: number; cardReleaseDays?: number }) =>
+  apiFetch<void>(`/admin/tenants/${id}/settings`, { method: 'PATCH', body: JSON.stringify(body) });
 
 // ── Withdrawals ───────────────────────────────────────────────────────────────
 

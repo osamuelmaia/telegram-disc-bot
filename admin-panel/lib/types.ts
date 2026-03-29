@@ -105,7 +105,9 @@ export interface Tenant {
   id: string;
   email: string;
   name?: string;
-  status: 'ACTIVE' | 'SUSPENDED';
+  status: 'ACTIVE' | 'SUSPENDED' | 'PENDING';
+  platformFeePercent?: string | null;
+  cardReleaseDays?: number;
   createdAt: string;
   _count?: { orders: number; subscriptions: number };
 }
