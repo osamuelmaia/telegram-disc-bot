@@ -25,8 +25,8 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
       'x-admin-key': API_KEY,
       ...(init?.headers ?? {}),
     },
-    // Sem cache no admin — sempre dados frescos
     cache: 'no-store',
+    signal: AbortSignal.timeout(8000),
   });
 
   if (!res.ok) {
