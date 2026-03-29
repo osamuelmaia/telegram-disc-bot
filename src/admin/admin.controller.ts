@@ -10,7 +10,7 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { AccessStatus, BillingInterval, OrderStatus, ProductType, SubscriptionStatus } from '@prisma/client';
+import { AccessStatus, BillingInterval, OrderStatus, ProductType, SubscriptionStatus, TenantStatus, WithdrawalStatus } from '@prisma/client';
 import { PaginationDto } from '../common/dto/pagination.dto';
 import { AdminGuard } from './admin.guard';
 import { AdminService } from './admin.service';
@@ -173,6 +173,74 @@ export class AdminController {
   findFailedWebhooks(@Query('page') page?: string, @Query('limit') limit?: string) {
     const pagination = this.buildPagination(page, limit);
     return this.adminService.findFailedWebhooks(pagination);
+  }
+
+  // ── Tenants ────────────────────────────────────────────────────────────────
+
+  @Get('tenants')
+  findTenants(
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('status') status?: string,
+    @Query('search') search?: string,
+  ) {
+    return this.adminService.findTenants(
+      { status: status as TenantStatus | undefined, search },
+      this.buildPagination(page, limit),
+    );
+  }
+
+  @Get('tenants/:id')
+  findTenantById(@Param('id') id: string) {
+    return this.adminService.findTenantById(id);
+  }
+
+  @Patch('tenants/:id/status')
+  updateTenantStatus(@Param('id') id: string, @Body() body: { status: TenantStatus }) {
+    return this.adminService.updateTenantStatus(id, body.status);
+  }
+
+  @Patch('tenants/:id/fee')
+  updateTenantFee(@Param('id') id: string, @Body() body: { feePercent: number }) {
+    return this.adminService.updateTenantFee(id, body.feePercent);
+  }
+
+  // ── Platform config ────────────────────────────────────────────────────────
+
+  @Get('config')
+  getPlatformConfig() {
+    return this.adminService.getPlatformConfig();
+  }
+
+  @Patch('config')
+  updatePlatformConfig(
+    @Body() body: { defaultFeePercent?: number; minWithdrawalAmount?: number; notificationEmail?: string },
+  ) {
+    return this.adminService.updatePlatformConfig(body);
+  }
+
+  // ── Saques ─────────────────────────────────────────────────────────────────
+
+  @Get('withdrawals')
+  findWithdrawals(
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('status') status?: string,
+  ) {
+    return this.adminService.findWithdrawals(
+      { status: status as WithdrawalStatus | undefined },
+      this.buildPagination(page, limit),
+    );
+  }
+
+  @Patch('withdrawals/:id/approve')
+  approveWithdrawal(@Param('id') id: string) {
+    return this.adminService.approveWithdrawal(id);
+  }
+
+  @Patch('withdrawals/:id/reject')
+  rejectWithdrawal(@Param('id') id: string, @Body() body: { reason: string }) {
+    return this.adminService.rejectWithdrawal(id, body.reason);
   }
 
   // ── Helpers ──────────────────────────────────────────────────────────────────

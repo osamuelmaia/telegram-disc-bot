@@ -13,6 +13,7 @@ import { WebhookModule } from './webhook/webhook.module';
 import { PaymentGatewayModule } from './payment-gateway/payment-gateway.module';
 import { OrderModule } from './order/order.module';
 import { WalletModule } from './wallet/wallet.module';
+import { DashboardModule } from './dashboard/dashboard.module';
 
 @Controller()
 class HealthController {
@@ -37,6 +38,7 @@ class HealthController {
     WalletModule,
     BotRegistryModule,
     WebhookModule,
+    DashboardModule,
     AdminModule,
   ],
   controllers: [HealthController],

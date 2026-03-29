@@ -164,6 +164,113 @@ export class WalletService {
     );
   }
 
+  /**
+   * Cria uma solicitação de saque e debita o saldo da carteira atomicamente.
+   * O admin aprova/rejeita depois; se rejeitado, chamar reverseWithdrawal().
+   */
+  async requestWithdrawal(
+    tenantId: string,
+    amount: Decimal,
+    pixKeyType: string,
+    pixKeyValue: string,
+  ) {
+    return this.prisma.$transaction(
+      async (tx) => {
+        await tx.wallet.upsert({
+          where: { tenantId },
+          create: { tenantId, balance: 0, totalReceived: 0, totalFees: 0, totalWithdrawn: 0 },
+          update: {},
+        });
+
+        const wallet = await tx.wallet.findUniqueOrThrow({ where: { tenantId } });
+        const balanceBefore = new Decimal(wallet.balance.toString());
+
+        if (balanceBefore.lessThan(amount)) {
+          throw new Error('Saldo insuficiente para realizar o saque');
+        }
+
+        const balanceAfter = balanceBefore.minus(amount);
+
+        // Cria a solicitação
+        const withdrawal = await tx.withdrawalRequest.create({
+          data: {
+            walletId: wallet.id,
+            tenantId,
+            amount,
+            pixKeyType,
+            pixKeyValue,
+            status: 'PENDING',
+          },
+        });
+
+        // Debita o saldo (reserva o valor)
+        await tx.walletTransaction.create({
+          data: {
+            walletId: wallet.id,
+            type: WalletTransactionType.DEBIT_WITHDRAWAL,
+            amount: amount.negated(),
+            balanceBefore,
+            balanceAfter,
+            description: `Saque solicitado #${withdrawal.id.substring(0, 8)}`,
+            withdrawalRequestId: withdrawal.id,
+          },
+        });
+
+        await tx.wallet.update({
+          where: { id: wallet.id },
+          data: {
+            balance: balanceAfter,
+            totalWithdrawn: { increment: amount },
+          },
+        });
+
+        this.logger.log(`[${tenantId}] Withdrawal requested — amount=${amount} id=${withdrawal.id}`);
+        return withdrawal;
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+    );
+  }
+
+  /**
+   * Reverte um saque rejeitado: devolve o valor ao saldo da carteira.
+   */
+  async reverseWithdrawal(tenantId: string, withdrawalRequestId: string): Promise<void> {
+    await this.prisma.$transaction(
+      async (tx) => {
+        const withdrawal = await tx.withdrawalRequest.findUniqueOrThrow({
+          where: { id: withdrawalRequestId },
+        });
+
+        const wallet = await tx.wallet.findUniqueOrThrow({ where: { tenantId } });
+        const balanceBefore = new Decimal(wallet.balance.toString());
+        const balanceAfter = balanceBefore.plus(withdrawal.amount);
+
+        await tx.walletTransaction.create({
+          data: {
+            walletId: wallet.id,
+            type: WalletTransactionType.CREDIT_REFUND,
+            amount: new Decimal(withdrawal.amount.toString()),
+            balanceBefore,
+            balanceAfter,
+            description: `Estorno de saque rejeitado #${withdrawalRequestId.substring(0, 8)}`,
+            withdrawalRequestId,
+          },
+        });
+
+        await tx.wallet.update({
+          where: { id: wallet.id },
+          data: {
+            balance: balanceAfter,
+            totalWithdrawn: { decrement: withdrawal.amount },
+          },
+        });
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+    );
+
+    this.logger.log(`[${tenantId}] Withdrawal reversed — id=${withdrawalRequestId}`);
+  }
+
   async getTransactions(tenantId: string, take = 50) {
     const wallet = await this.getOrCreateWallet(tenantId);
     return this.prisma.walletTransaction.findMany({

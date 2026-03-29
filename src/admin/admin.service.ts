@@ -1,6 +1,7 @@
-import { Injectable } from '@nestjs/common';
-import { AccessStatus, OrderStatus, Prisma, SubscriptionStatus } from '@prisma/client';
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { AccessStatus, OrderStatus, Prisma, SubscriptionStatus, TenantStatus, WithdrawalStatus } from '@prisma/client';
 import { PaginatedResult, paginate } from '../common/dto/paginated-result.type';
+import { WalletService } from '../wallet/wallet.service';
 import { PaginationDto } from '../common/dto/pagination.dto';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -40,7 +41,10 @@ export interface DashboardStats {
 
 @Injectable()
 export class AdminService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly walletService: WalletService,
+  ) {}
 
   // ── Dashboard ──────────────────────────────────────────────────────────────
 
@@ -298,5 +302,137 @@ export class AdminService {
       this.prisma.webhookEvent.count({ where }),
     ]);
     return paginate(data, total, pagination.page, pagination.take);
+  }
+
+  // ── Tenants ────────────────────────────────────────────────────────────────
+
+  async findTenants(
+    filters: { status?: TenantStatus; search?: string },
+    pagination: PaginationDto,
+  ): Promise<PaginatedResult<object>> {
+    const where: Prisma.TenantWhereInput = {};
+    if (filters.status) where.status = filters.status;
+    if (filters.search) {
+      where.OR = [
+        { name: { contains: filters.search, mode: 'insensitive' } },
+        { email: { contains: filters.search, mode: 'insensitive' } },
+      ];
+    }
+
+    const [data, total] = await this.prisma.$transaction([
+      this.prisma.tenant.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip: pagination.skip,
+        take: pagination.take,
+        select: {
+          id: true, name: true, email: true, status: true,
+          platformFeePercent: true, createdAt: true,
+          _count: { select: { products: true, orders: true, endUsers: true } },
+        },
+      }),
+      this.prisma.tenant.count({ where }),
+    ]);
+    return paginate(data, total, pagination.page, pagination.take);
+  }
+
+  async findTenantById(id: string) {
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id },
+      select: {
+        id: true, name: true, email: true, status: true,
+        pixKeyType: true, pixKeyValue: true, platformFeePercent: true,
+        createdAt: true, updatedAt: true,
+        bot: { select: { username: true, status: true } },
+        wallet: { select: { balance: true, totalReceived: true, totalFees: true, totalWithdrawn: true } },
+        paymentGatewayConfigs: { select: { gateway: true, active: true, createdAt: true } },
+        _count: { select: { products: true, orders: true, endUsers: true, subscriptions: true } },
+      },
+    });
+    if (!tenant) throw new NotFoundException(`Tenant ${id} not found`);
+    return tenant;
+  }
+
+  updateTenantStatus(id: string, status: TenantStatus) {
+    return this.prisma.tenant.update({
+      where: { id },
+      data: { status },
+      select: { id: true, name: true, status: true },
+    });
+  }
+
+  updateTenantFee(id: string, feePercent: number) {
+    return this.prisma.tenant.update({
+      where: { id },
+      data: { platformFeePercent: feePercent },
+      select: { id: true, name: true, platformFeePercent: true },
+    });
+  }
+
+  // ── Platform config ────────────────────────────────────────────────────────
+
+  async getPlatformConfig() {
+    const config = await this.prisma.platformConfig.findFirst();
+    if (!config) {
+      return this.prisma.platformConfig.create({
+        data: { defaultFeePercent: 0.05, minWithdrawalAmount: 50 },
+      });
+    }
+    return config;
+  }
+
+  updatePlatformConfig(dto: { defaultFeePercent?: number; minWithdrawalAmount?: number; notificationEmail?: string }) {
+    return this.prisma.platformConfig.updateMany({ data: dto as any });
+  }
+
+  // ── Saques ────────────────────────────────────────────────────────────────
+
+  async findWithdrawals(
+    filters: { status?: WithdrawalStatus },
+    pagination: PaginationDto,
+  ): Promise<PaginatedResult<object>> {
+    const where: Prisma.WithdrawalRequestWhereInput = {};
+    if (filters.status) where.status = filters.status;
+
+    const [data, total] = await this.prisma.$transaction([
+      this.prisma.withdrawalRequest.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip: pagination.skip,
+        take: pagination.take,
+        include: {
+          tenant: { select: { name: true, email: true } },
+        },
+      }),
+      this.prisma.withdrawalRequest.count({ where }),
+    ]);
+    return paginate(data, total, pagination.page, pagination.take);
+  }
+
+  async approveWithdrawal(id: string) {
+    const withdrawal = await this.prisma.withdrawalRequest.findUnique({ where: { id } });
+    if (!withdrawal) throw new NotFoundException(`Withdrawal ${id} not found`);
+
+    return this.prisma.withdrawalRequest.update({
+      where: { id },
+      data: { status: WithdrawalStatus.APPROVED, approvedAt: new Date() },
+    });
+  }
+
+  async rejectWithdrawal(id: string, reason: string) {
+    const withdrawal = await this.prisma.withdrawalRequest.findUnique({ where: { id } });
+    if (!withdrawal) throw new NotFoundException(`Withdrawal ${id} not found`);
+
+    // Reverte o saldo na carteira do tenant
+    await this.walletService.reverseWithdrawal(withdrawal.tenantId, id);
+
+    return this.prisma.withdrawalRequest.update({
+      where: { id },
+      data: {
+        status: WithdrawalStatus.REJECTED,
+        rejectedAt: new Date(),
+        rejectionReason: reason,
+      },
+    });
   }
 }
