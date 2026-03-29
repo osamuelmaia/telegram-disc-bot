@@ -416,7 +416,7 @@ model WebhookEvent {
   updatedAt DateTime @updatedAt
 
   /// Garante idempotência: mesmo gateway + mesmo eventId jamais será inserido duas vezes
-  @@unique([gateway, eventId])
+  @@unique([gateway, eventId], name: "gateway_eventId")
   @@index([gateway, eventType])
   @@index([status])
   @@map("webhook_events")

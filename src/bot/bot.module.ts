@@ -7,6 +7,7 @@ import { ProductModule } from '../product/product.module';
 import { AccessModule } from '../access/access.module';
 import { CheckoutModule } from '../checkout/checkout.module';
 import { BotUpdate } from './bot.update';
+import { BotEventsService } from './bot-events.service';
 import { BuyPixScene } from './scenes/buy-pix.scene';
 import { BuyCardScene } from './scenes/buy-card.scene';
 
@@ -48,6 +49,7 @@ import { BuyCardScene } from './scenes/buy-card.scene';
   ],
   providers: [
     BotUpdate,
+    BotEventsService,
     BuyPixScene,
     BuyCardScene,
   ],
