@@ -6,7 +6,6 @@ import { BotModule } from './bot/bot.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { WebhookModule } from './webhook/webhook.module';
 
-// Health check inline — evita criar um arquivo extra
 @Controller()
 class HealthController {
   @Get('health')
@@ -15,12 +14,14 @@ class HealthController {
   }
 }
 
+const optionalModules = process.env.TELEGRAM_BOT_TOKEN ? [BotModule] : [];
+
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     EventEmitterModule.forRoot(),
     PrismaModule,
-    BotModule,
+    ...optionalModules,
     WebhookModule,
     AdminModule,
   ],
