@@ -144,6 +144,33 @@ export class PaymentService {
     }
   }
 
+  // ── Cancelamento de assinatura ───────────────────────────────────────────
+
+  async cancelSubscription(subscriptionId: string, immediately: boolean): Promise<void> {
+    const subscription = await this.prisma.subscription.findUnique({ where: { id: subscriptionId } });
+    if (!subscription) throw new NotFoundException(`Subscription ${subscriptionId} not found`);
+    if (!subscription.gatewaySubscriptionId) {
+      throw new Error(`Subscription ${subscriptionId} has no gatewaySubscriptionId`);
+    }
+
+    await this.stripeGateway.cancelSubscription({
+      gatewaySubscriptionId: subscription.gatewaySubscriptionId,
+      immediately,
+    });
+
+    await this.prisma.subscription.update({
+      where: { id: subscriptionId },
+      data: {
+        cancelAtPeriodEnd: !immediately,
+        ...(immediately && {
+          status: SubscriptionStatus.CANCELLED,
+          cancelledAt: new Date(),
+          cancellationReason: 'admin_cancelled',
+        }),
+      },
+    });
+  }
+
   // ── Processamento de webhook ──────────────────────────────────────────────
 
   async processWebhook(

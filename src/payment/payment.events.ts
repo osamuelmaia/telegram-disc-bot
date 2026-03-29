@@ -14,6 +14,10 @@ export const PAYMENT_EVENTS = {
   INVOICE_FAILED: 'payment.invoice.failed',
 } as const;
 
+export const ACCESS_EVENTS = {
+  MANUALLY_REVOKED: 'access.manually_revoked',
+} as const;
+
 export type PaymentEventKey = (typeof PAYMENT_EVENTS)[keyof typeof PAYMENT_EVENTS];
 
 // ── Payloads dos eventos ──────────────────────────────────────────────────────
@@ -70,4 +74,14 @@ export interface InvoiceFailedEvent {
   telegramId: bigint;
   productId: string;
   productName: string;
+}
+
+export interface AccessManuallyRevokedEvent {
+  accessId: string;
+  userId: string;
+  telegramId: bigint;
+  productId: string;
+  productName: string;
+  chatId: string;
+  reason: string;
 }

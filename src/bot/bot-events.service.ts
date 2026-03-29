@@ -4,6 +4,8 @@ import { InjectBot } from 'nestjs-telegraf';
 import { Telegraf } from 'telegraf';
 import { PrismaService } from '../prisma/prisma.service';
 import {
+  ACCESS_EVENTS,
+  AccessManuallyRevokedEvent,
   InvoiceFailedEvent,
   InvoicePaidEvent,
   PAYMENT_EVENTS,
@@ -144,6 +146,25 @@ export class BotEventsService {
     }
   }
 
+  // ── Acesso revogado manualmente ───────────────────────────────────────────
+
+  @OnEvent(ACCESS_EVENTS.MANUALLY_REVOKED)
+  async onAccessManuallyRevoked(event: AccessManuallyRevokedEvent): Promise<void> {
+    this.logger.log(`Access manually revoked: access=${event.accessId} user=${event.userId}`);
+
+    try {
+      await this.kickUserFromChat(event.chatId, event.telegramId);
+
+      await this.bot.telegram.sendMessage(
+        Number(event.telegramId),
+        Messages.card.cancelled(event.productName),
+        { parse_mode: 'MarkdownV2', ...mainKeyboard() },
+      );
+    } catch (error) {
+      this.logger.error(`Failed to process manual revocation for user ${event.telegramId}`, error);
+    }
+  }
+
   // ── Helpers privados ──────────────────────────────────────────────────────
 
   /**
@@ -180,13 +201,20 @@ export class BotEventsService {
       return;
     }
 
+    await this.kickUserFromChat(product.chatId, telegramId);
+  }
+
+  /**
+   * Bane e desbane imediatamente um usuário de um chat (remove sem bloquear reingressos futuros).
+   */
+  private async kickUserFromChat(chatId: string, telegramId: bigint): Promise<void> {
     try {
-      await this.bot.telegram.banChatMember(product.chatId, Number(telegramId));
+      await this.bot.telegram.banChatMember(chatId, Number(telegramId));
       // Desbane imediatamente para que o usuário possa reingressar no futuro se reativar
-      await this.bot.telegram.unbanChatMember(product.chatId, Number(telegramId));
+      await this.bot.telegram.unbanChatMember(chatId, Number(telegramId));
     } catch (error) {
       // Pode falhar se o usuário já saiu do grupo — não é erro crítico
-      this.logger.warn(`Could not kick user ${telegramId} from chat ${product.chatId}: ${error}`);
+      this.logger.warn(`Could not kick user ${telegramId} from chat ${chatId}: ${error}`);
     }
   }
 }
