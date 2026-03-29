@@ -1,9 +1,11 @@
 import { Controller, Get, Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { EventEmitterModule } from '@nestjs/event-emitter';
-import { AdminModule } from './admin/admin.module';
-import { BotModule } from './bot/bot.module';
 import { PrismaModule } from './prisma/prisma.module';
+import { CryptoModule } from './common/crypto/crypto.module';
+import { TenantModule } from './tenant/tenant.module';
+import { AuthModule } from './auth/auth.module';
+import { AdminModule } from './admin/admin.module';
 import { WebhookModule } from './webhook/webhook.module';
 
 @Controller()
@@ -14,14 +16,14 @@ class HealthController {
   }
 }
 
-const optionalModules = process.env.TELEGRAM_BOT_TOKEN ? [BotModule] : [];
-
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     EventEmitterModule.forRoot(),
     PrismaModule,
-    ...optionalModules,
+    CryptoModule,
+    TenantModule,
+    AuthModule,
     WebhookModule,
     AdminModule,
   ],

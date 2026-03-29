@@ -2,23 +2,19 @@ import { Injectable } from '@nestjs/common';
 import { AccessStatus, OrderStatus, Prisma, SubscriptionStatus } from '@prisma/client';
 import { PaginatedResult, paginate } from '../common/dto/paginated-result.type';
 import { PaginationDto } from '../common/dto/pagination.dto';
-import { AccessService, GrantManualAccessDto } from '../access/access.service';
-import { PaymentService } from '../payment/payment.service';
-import { CreateProductDto, ProductService, UpdateProductDto } from '../product/product.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { WebhookService } from '../webhook/webhook.service';
 
 // ── Filters ─────────────────────────────────────────────────────────────────
 
 export interface FindOrdersFilter {
   status?: OrderStatus;
-  userId?: string;
+  endUserId?: string;
   search?: string;
 }
 
 export interface FindSubscriptionsFilter {
   status?: SubscriptionStatus;
-  userId?: string;
+  endUserId?: string;
 }
 
 export interface FindCustomersFilter {
@@ -26,7 +22,7 @@ export interface FindCustomersFilter {
 }
 
 export interface FindAccessesAdminFilter {
-  userId?: string;
+  endUserId?: string;
   productId?: string;
   status?: AccessStatus;
 }
@@ -44,13 +40,7 @@ export interface DashboardStats {
 
 @Injectable()
 export class AdminService {
-  constructor(
-    private readonly prisma: PrismaService,
-    private readonly paymentService: PaymentService,
-    private readonly accessService: AccessService,
-    private readonly productService: ProductService,
-    private readonly webhookService: WebhookService,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   // ── Dashboard ──────────────────────────────────────────────────────────────
 
@@ -89,9 +79,9 @@ export class AdminService {
       this.prisma.subscription.count({ where: { status: SubscriptionStatus.TRIALING } }),
       this.prisma.subscription.count({ where: { status: SubscriptionStatus.PAST_DUE } }),
       this.prisma.subscription.count({ where: { status: SubscriptionStatus.CANCELLED } }),
-      this.prisma.user.count(),
-      this.prisma.user.count({ where: { createdAt: { gte: todayStart } } }),
-      this.prisma.user.count({ where: { createdAt: { gte: monthStart } } }),
+      this.prisma.endUser.count(),
+      this.prisma.endUser.count({ where: { createdAt: { gte: todayStart } } }),
+      this.prisma.endUser.count({ where: { createdAt: { gte: monthStart } } }),
       this.prisma.access.count({ where: { status: AccessStatus.ACTIVE } }),
       this.prisma.access.count({ where: { status: AccessStatus.REVOKED } }),
       this.prisma.webhookEvent.count({ where: { status: 'FAILED' } }),
@@ -118,12 +108,12 @@ export class AdminService {
   async findOrders(filter: FindOrdersFilter, pagination: PaginationDto): Promise<PaginatedResult<object>> {
     const where: Prisma.OrderWhereInput = {};
     if (filter.status) where.status = filter.status;
-    if (filter.userId) where.userId = filter.userId;
+    if (filter.endUserId) where.endUserId = filter.endUserId;
     if (filter.search) {
       where.OR = [
         { id: { contains: filter.search } },
-        { user: { username: { contains: filter.search, mode: 'insensitive' } } },
-        { user: { firstName: { contains: filter.search, mode: 'insensitive' } } },
+        { endUser: { username: { contains: filter.search, mode: 'insensitive' } } },
+        { endUser: { firstName: { contains: filter.search, mode: 'insensitive' } } },
       ];
     }
 
@@ -134,7 +124,7 @@ export class AdminService {
         skip: pagination.skip,
         take: pagination.take,
         include: {
-          user: { select: { telegramId: true, username: true, firstName: true } },
+          endUser: { select: { telegramId: true, username: true, firstName: true } },
           product: { select: { name: true } },
         },
       }),
@@ -148,7 +138,7 @@ export class AdminService {
     return this.prisma.order.findUnique({
       where: { id },
       include: {
-        user: { select: { id: true, telegramId: true, username: true, firstName: true, lastName: true } },
+        endUser: { select: { id: true, telegramId: true, username: true, firstName: true, lastName: true } },
         product: { select: { id: true, name: true, type: true } },
         access: { select: { id: true, status: true, inviteLink: true, grantedAt: true } },
       },
@@ -160,7 +150,7 @@ export class AdminService {
   async findSubscriptions(filter: FindSubscriptionsFilter, pagination: PaginationDto): Promise<PaginatedResult<object>> {
     const where: Prisma.SubscriptionWhereInput = {};
     if (filter.status) where.status = filter.status;
-    if (filter.userId) where.userId = filter.userId;
+    if (filter.endUserId) where.endUserId = filter.endUserId;
 
     const [data, total] = await this.prisma.$transaction([
       this.prisma.subscription.findMany({
@@ -169,7 +159,7 @@ export class AdminService {
         skip: pagination.skip,
         take: pagination.take,
         include: {
-          user: { select: { telegramId: true, username: true, firstName: true } },
+          endUser: { select: { telegramId: true, username: true, firstName: true } },
           product: { select: { name: true, price: true } },
         },
       }),
@@ -183,7 +173,7 @@ export class AdminService {
     return this.prisma.subscription.findUnique({
       where: { id },
       include: {
-        user: { select: { id: true, telegramId: true, username: true, firstName: true } },
+        endUser: { select: { id: true, telegramId: true, username: true, firstName: true } },
         product: { select: { id: true, name: true, price: true, billingInterval: true } },
         access: { select: { id: true, status: true, revokedAt: true } },
         payments: { orderBy: { createdAt: 'desc' }, take: 12 },
@@ -191,14 +181,10 @@ export class AdminService {
     });
   }
 
-  async cancelSubscription(id: string, immediately: boolean): Promise<void> {
-    return this.paymentService.cancelSubscription(id, immediately);
-  }
-
   // ── Customers ───────────────────────────────────────────────────────────────
 
   async findCustomers(filter: FindCustomersFilter, pagination: PaginationDto): Promise<PaginatedResult<object>> {
-    const where: Prisma.UserWhereInput = {};
+    const where: Prisma.EndUserWhereInput = {};
     if (filter.search) {
       const term = filter.search.trim();
       where.OR = [
@@ -209,7 +195,7 @@ export class AdminService {
     }
 
     const [data, total] = await this.prisma.$transaction([
-      this.prisma.user.findMany({
+      this.prisma.endUser.findMany({
         where,
         orderBy: { createdAt: 'desc' },
         skip: pagination.skip,
@@ -218,14 +204,14 @@ export class AdminService {
           _count: { select: { orders: true, subscriptions: true, accesses: true } },
         },
       }),
-      this.prisma.user.count({ where }),
+      this.prisma.endUser.count({ where }),
     ]);
 
     return paginate(data, total, pagination.page, pagination.take);
   }
 
   async findCustomerById(id: string): Promise<object | null> {
-    return this.prisma.user.findUnique({
+    return this.prisma.endUser.findUnique({
       where: { id },
       include: {
         orders: { orderBy: { createdAt: 'desc' }, take: 10, include: { product: { select: { name: true } } } },
@@ -254,39 +240,63 @@ export class AdminService {
     return paginate(data, total, pagination.page, pagination.take);
   }
 
-  createProduct(dto: CreateProductDto) {
-    return this.productService.create(dto);
+  createProduct(dto: { name: string; description?: string; type: any; price: number; currency?: string; billingInterval?: any; trialDays?: number; chatId?: string; tenantId: string }) {
+    return this.prisma.product.create({ data: dto });
   }
 
-  updateProduct(id: string, dto: UpdateProductDto) {
-    return this.productService.update(id, dto);
+  updateProduct(id: string, dto: Partial<{ name: string; description: string; price: number; billingInterval: any; trialDays: number; chatId: string; active: boolean }>) {
+    return this.prisma.product.update({ where: { id }, data: dto });
   }
 
-  deleteProduct(id: string) {
-    return this.productService.softDelete(id);
+  softDeleteProduct(id: string) {
+    return this.prisma.product.update({ where: { id }, data: { active: false } });
   }
 
   // ── Accesses ────────────────────────────────────────────────────────────────
 
   async findAccesses(filter: FindAccessesAdminFilter, pagination: PaginationDto): Promise<PaginatedResult<object>> {
-    return this.accessService.findAll(filter, pagination) as Promise<PaginatedResult<object>>;
-  }
+    const where: Prisma.AccessWhereInput = {};
+    if (filter.endUserId) where.endUserId = filter.endUserId;
+    if (filter.productId) where.productId = filter.productId;
+    if (filter.status) where.status = filter.status;
 
-  grantAccess(dto: GrantManualAccessDto) {
-    return this.accessService.grantManual(dto);
+    const [data, total] = await this.prisma.$transaction([
+      this.prisma.access.findMany({
+        where,
+        orderBy: { grantedAt: 'desc' },
+        skip: pagination.skip,
+        take: pagination.take,
+        include: {
+          endUser: { select: { telegramId: true, username: true, firstName: true } },
+          product: { select: { name: true } },
+        },
+      }),
+      this.prisma.access.count({ where }),
+    ]);
+
+    return paginate(data, total, pagination.page, pagination.take);
   }
 
   revokeAccess(accessId: string, reason: string) {
-    return this.accessService.revoke(accessId, reason);
+    return this.prisma.access.update({
+      where: { id: accessId },
+      data: { status: AccessStatus.REVOKED, revokedAt: new Date(), revokedReason: reason },
+    });
   }
 
   // ── Webhooks ────────────────────────────────────────────────────────────────
 
   async findFailedWebhooks(pagination: PaginationDto): Promise<PaginatedResult<object>> {
-    return this.webhookService.findFailed(pagination) as Promise<PaginatedResult<object>>;
-  }
-
-  async retryWebhook(id: string): Promise<void> {
-    await this.webhookService.retryFailed(id);
+    const where = { status: 'FAILED' as any };
+    const [data, total] = await this.prisma.$transaction([
+      this.prisma.webhookEvent.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip: pagination.skip,
+        take: pagination.take,
+      }),
+      this.prisma.webhookEvent.count({ where }),
+    ]);
+    return paginate(data, total, pagination.page, pagination.take);
   }
 }
