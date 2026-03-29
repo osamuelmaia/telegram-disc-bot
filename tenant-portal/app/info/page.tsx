@@ -88,7 +88,7 @@ export default async function InfoPage() {
       </div>
 
       {/* Dados cadastrais */}
-      {(profile.document || profile.zipCode) && (
+      {!!(profile.document || profile.zipCode) && (
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
           <div className="flex items-center gap-2 mb-5">
             <MapPin size={18} className="text-indigo-600" />
