@@ -1,14 +1,14 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { PaymentGateway, WebhookEvent } from '@prisma/client';
+import { Inject, Injectable, Logger } from '@nestjs/common';
+import { PaymentGateway, WebhookEvent, WebhookStatus } from '@prisma/client';
+import { PaginatedResult, paginate } from '../common/dto/paginated-result.type';
+import { PaginationDto } from '../common/dto/pagination.dto';
 import { IPaymentGateway, WebhookEventType } from '../payment/interfaces/payment-gateway.interface';
 import { EFI_GATEWAY, STRIPE_GATEWAY } from '../payment/types/gateway.types';
-import { WebhookIdempotencyService } from './webhook-idempotency.service';
+import { PrismaService } from '../prisma/prisma.service';
 import { IWebhookProcessor } from './processors/webhook-processor.interface';
 import { PixWebhookProcessor } from './processors/pix.processor';
 import { SubscriptionWebhookProcessor } from './processors/subscription.processor';
-import { Inject } from '@nestjs/common';
-import { PrismaService } from '../prisma/prisma.service';
-import { WebhookStatus } from '@prisma/client';
+import { WebhookIdempotencyService } from './webhook-idempotency.service';
 
 // =============================================================================
 // WebhookService — Pipeline de processamento de webhooks
@@ -121,14 +121,20 @@ export class WebhookService {
   }
 
   /**
-   * Lista eventos com status FAILED para monitoramento.
+   * Lista eventos com status FAILED para monitoramento, com paginação.
    */
-  async findFailed(limit = 50): Promise<WebhookEvent[]> {
-    return this.prisma.webhookEvent.findMany({
-      where: { status: WebhookStatus.FAILED },
-      orderBy: { createdAt: 'desc' },
-      take: limit,
-    });
+  async findFailed(pagination: PaginationDto = new PaginationDto()): Promise<PaginatedResult<WebhookEvent>> {
+    const where = { status: WebhookStatus.FAILED };
+    const [data, total] = await this.prisma.$transaction([
+      this.prisma.webhookEvent.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip: pagination.skip,
+        take: pagination.take,
+      }),
+      this.prisma.webhookEvent.count({ where }),
+    ]);
+    return paginate(data, total, pagination.page, pagination.take);
   }
 
   // ── Helpers privados ──────────────────────────────────────────────────────
