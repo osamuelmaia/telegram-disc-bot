@@ -13,12 +13,13 @@ export async function revokeAccessAction(id: string, reason: string) {
   revalidatePath('/accesses');
 }
 
-export async function grantAccessAction(body: {
-  userId: string;
-  productId: string;
-  chatId: string;
-  expiresAt?: string;
-}) {
+export async function grantAccessAction(formData: FormData) {
+  const body = {
+    userId: formData.get('userId') as string,
+    productId: formData.get('productId') as string,
+    chatId: formData.get('chatId') as string,
+    expiresAt: (formData.get('expiresAt') as string) || undefined,
+  };
   await api.grantAccess(body);
   revalidatePath('/accesses');
 }
