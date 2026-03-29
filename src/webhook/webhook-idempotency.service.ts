@@ -48,14 +48,16 @@ export class WebhookIdempotencyService {
     eventId: string,
     eventType: string,
     rawPayload: unknown,
+    tenantId: string = 'platform',
   ): Promise<AcquireResult> {
     try {
       const record = await this.prisma.webhookEvent.create({
         data: {
+          tenantId,
           gateway,
           eventId,
           eventType,
-          status: WebhookStatus.PROCESSING,
+          status: WebhookStatus.RECEIVED,
           payload: rawPayload as Prisma.InputJsonValue,
           attempts: 1,
         },
@@ -68,7 +70,7 @@ export class WebhookIdempotencyService {
         error instanceof Prisma.PrismaClientKnownRequestError &&
         error.code === 'P2002'
       ) {
-        return this.handleDuplicate(gateway, eventId);
+        return this.handleDuplicate(gateway, eventId, tenantId);
       }
 
       throw error;
@@ -121,7 +123,7 @@ export class WebhookIdempotencyService {
     return this.prisma.webhookEvent.update({
       where: { id: webhookEventId },
       data: {
-        status: WebhookStatus.PROCESSING,
+        status: WebhookStatus.RECEIVED,
         error: null,
         attempts: { increment: 1 },
       },
@@ -133,9 +135,10 @@ export class WebhookIdempotencyService {
   private async handleDuplicate(
     gateway: PaymentGateway,
     eventId: string,
+    tenantId: string = 'platform',
   ): Promise<AcquireResult> {
     const existing = await this.prisma.webhookEvent.findUnique({
-      where: { gateway_eventId: { gateway, eventId } },
+      where: { tenantId_gateway_eventId: { tenantId, gateway, eventId } },
     });
 
     if (!existing) {
@@ -150,7 +153,7 @@ export class WebhookIdempotencyService {
         );
         return { skip: true, record: existing };
 
-      case WebhookStatus.PROCESSING:
+      case WebhookStatus.RECEIVED:
         // Outro processo está tratando este evento agora.
         // Retorna skip=true; o gateway receberá 200 e não vai reenviar.
         this.logger.warn(
@@ -166,7 +169,7 @@ export class WebhookIdempotencyService {
         const updated = await this.prisma.webhookEvent.update({
           where: { id: existing.id },
           data: {
-            status: WebhookStatus.PROCESSING,
+            status: WebhookStatus.RECEIVED,
             error: null,
             attempts: { increment: 1 },
           },

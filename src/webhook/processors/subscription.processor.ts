@@ -69,12 +69,12 @@ export class SubscriptionWebhookProcessor implements IWebhookProcessor {
     const subscription = await this.prisma.subscription.findFirst({
       where: {
         OR: [
-          ...(data.checkoutSessionId ? [{ checkoutSessionId: data.checkoutSessionId }] : []),
-          { gatewaySubscriptionId: data.gatewaySubscriptionId },
+          ...(data.gatewaySubscriptionId ? [{ gatewaySubscriptionId: data.gatewaySubscriptionId }] : []),
+          ...(data.checkoutSessionId ? [{ checkoutUrl: { contains: data.checkoutSessionId } }] : []),
         ],
       },
       include: {
-        user: { select: { id: true, telegramId: true } },
+        endUser: { select: { id: true, telegramId: true } },
         product: { select: { id: true, name: true, chatId: true } },
       },
     });
@@ -101,10 +101,7 @@ export class SubscriptionWebhookProcessor implements IWebhookProcessor {
         data: {
           status: SubscriptionStatus.ACTIVE,
           gatewaySubscriptionId: data.gatewaySubscriptionId,
-          gatewayCustomerId: data.gatewayCustomerId,
-          currentPeriodStart: data.currentPeriodStart,
           currentPeriodEnd: data.currentPeriodEnd,
-          trialEndsAt: data.trialEnd,
         },
       });
 
@@ -113,7 +110,8 @@ export class SubscriptionWebhookProcessor implements IWebhookProcessor {
 
       return tx.access.create({
         data: {
-          userId: subscription.userId,
+          tenantId: subscription.tenantId,
+          endUserId: subscription.endUserId,
           productId: subscription.productId,
           chatId: subscription.product.chatId ?? '',
           status: AccessStatus.ACTIVE,
@@ -128,8 +126,8 @@ export class SubscriptionWebhookProcessor implements IWebhookProcessor {
 
     const payload: SubscriptionActivatedEvent = {
       subscriptionId: subscription.id,
-      userId: subscription.userId,
-      telegramId: subscription.user.telegramId,
+      endUserId: subscription.endUserId,
+      telegramId: subscription.endUser.telegramId,
       productId: subscription.productId,
       productName: subscription.product.name,
       chatId: subscription.product.chatId ?? '',
@@ -155,7 +153,6 @@ export class SubscriptionWebhookProcessor implements IWebhookProcessor {
       where: { gatewaySubscriptionId: data.gatewaySubscriptionId },
       data: {
         status: statusMap[data.status] ?? SubscriptionStatus.PAST_DUE,
-        currentPeriodStart: data.currentPeriodStart,
         currentPeriodEnd: data.currentPeriodEnd,
         cancelAtPeriodEnd: data.cancelAtPeriodEnd,
       },
@@ -172,7 +169,7 @@ export class SubscriptionWebhookProcessor implements IWebhookProcessor {
     const subscription = await this.prisma.subscription.findFirst({
       where: { gatewaySubscriptionId: data.gatewaySubscriptionId },
       include: {
-        user: { select: { id: true, telegramId: true } },
+        endUser: { select: { id: true, telegramId: true } },
         product: { select: { id: true, name: true } },
       },
     });
@@ -214,8 +211,8 @@ export class SubscriptionWebhookProcessor implements IWebhookProcessor {
 
     const payload: SubscriptionCancelledEvent = {
       subscriptionId: subscription.id,
-      userId: subscription.userId,
-      telegramId: subscription.user.telegramId,
+      endUserId: subscription.endUserId,
+      telegramId: subscription.endUser.telegramId,
       productId: subscription.productId,
       productName: subscription.product.name,
     };
@@ -229,7 +226,7 @@ export class SubscriptionWebhookProcessor implements IWebhookProcessor {
     const subscription = await this.prisma.subscription.findFirst({
       where: { gatewaySubscriptionId: data.gatewaySubscriptionId },
       include: {
-        user: { select: { id: true, telegramId: true } },
+        endUser: { select: { id: true, telegramId: true } },
         product: { select: { id: true, name: true } },
       },
     });
@@ -245,8 +242,8 @@ export class SubscriptionWebhookProcessor implements IWebhookProcessor {
 
     const payload: SubscriptionPastDueEvent = {
       subscriptionId: subscription.id,
-      userId: subscription.userId,
-      telegramId: subscription.user.telegramId,
+      endUserId: subscription.endUserId,
+      telegramId: subscription.endUser.telegramId,
       productId: subscription.productId,
       productName: subscription.product.name,
     };
@@ -259,7 +256,7 @@ export class SubscriptionWebhookProcessor implements IWebhookProcessor {
   private async handleInvoicePaid(data: InvoicePaidData, wh: string): Promise<void> {
     const subscription = await this.prisma.subscription.findFirst({
       where: { gatewaySubscriptionId: data.gatewaySubscriptionId },
-      include: { user: { select: { id: true, telegramId: true } } },
+      include: { endUser: { select: { id: true, telegramId: true } } },
     });
 
     if (!subscription) return;
@@ -278,13 +275,10 @@ export class SubscriptionWebhookProcessor implements IWebhookProcessor {
       data: {
         subscriptionId: subscription.id,
         gatewayInvoiceId: data.gatewayInvoiceId,
-        gatewayPaymentId: data.gatewayPaymentId,
         amount: data.amount,
         currency: 'BRL',
         status: PaymentStatus.PAID,
         paidAt: data.paidAt,
-        periodStart: data.periodStart,
-        periodEnd: data.periodEnd,
       },
     });
 
@@ -294,8 +288,8 @@ export class SubscriptionWebhookProcessor implements IWebhookProcessor {
 
     const payload: InvoicePaidEvent = {
       subscriptionId: subscription.id,
-      userId: subscription.userId,
-      telegramId: subscription.user.telegramId,
+      endUserId: subscription.endUserId,
+      telegramId: subscription.endUser.telegramId,
       gatewayInvoiceId: data.gatewayInvoiceId,
       amount: data.amount,
     };
@@ -309,7 +303,7 @@ export class SubscriptionWebhookProcessor implements IWebhookProcessor {
     const subscription = await this.prisma.subscription.findFirst({
       where: { gatewaySubscriptionId: data.gatewaySubscriptionId },
       include: {
-        user: { select: { id: true, telegramId: true } },
+        endUser: { select: { id: true, telegramId: true } },
         product: { select: { id: true, name: true } },
       },
     });
@@ -328,7 +322,6 @@ export class SubscriptionWebhookProcessor implements IWebhookProcessor {
           amount: 0,
           currency: 'BRL',
           status: PaymentStatus.FAILED,
-          failedAt: data.failedAt,
         },
       });
     }
@@ -339,8 +332,8 @@ export class SubscriptionWebhookProcessor implements IWebhookProcessor {
 
     const payload: InvoiceFailedEvent = {
       subscriptionId: subscription.id,
-      userId: subscription.userId,
-      telegramId: subscription.user.telegramId,
+      endUserId: subscription.endUserId,
+      telegramId: subscription.endUser.telegramId,
       productId: subscription.productId,
       productName: subscription.product.name,
     };

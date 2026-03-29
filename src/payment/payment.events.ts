@@ -1,5 +1,5 @@
 // =============================================================================
-// Eventos de pagamento — emitidos pelo PaymentService via EventEmitter2
+// Eventos de pagamento — emitidos pelo WebhookService via EventEmitter2
 // =============================================================================
 // O BotEventsService escuta estes eventos para notificar o usuário no Telegram
 // e executar operações de acesso (grant/revoke) de forma desacoplada.
@@ -24,7 +24,7 @@ export type PaymentEventKey = (typeof PAYMENT_EVENTS)[keyof typeof PAYMENT_EVENT
 
 export interface PixConfirmedEvent {
   orderId: string;
-  userId: string;
+  endUserId: string;
   telegramId: bigint;
   productId: string;
   productName: string;
@@ -36,7 +36,7 @@ export interface PixConfirmedEvent {
 
 export interface SubscriptionActivatedEvent {
   subscriptionId: string;
-  userId: string;
+  endUserId: string;
   telegramId: bigint;
   productId: string;
   productName: string;
@@ -46,7 +46,7 @@ export interface SubscriptionActivatedEvent {
 
 export interface SubscriptionCancelledEvent {
   subscriptionId: string;
-  userId: string;
+  endUserId: string;
   telegramId: bigint;
   productId: string;
   productName: string;
@@ -54,7 +54,7 @@ export interface SubscriptionCancelledEvent {
 
 export interface SubscriptionPastDueEvent {
   subscriptionId: string;
-  userId: string;
+  endUserId: string;
   telegramId: bigint;
   productId: string;
   productName: string;
@@ -62,7 +62,7 @@ export interface SubscriptionPastDueEvent {
 
 export interface InvoicePaidEvent {
   subscriptionId: string;
-  userId: string;
+  endUserId: string;
   telegramId: bigint;
   gatewayInvoiceId: string;
   amount: number;
@@ -70,7 +70,7 @@ export interface InvoicePaidEvent {
 
 export interface InvoiceFailedEvent {
   subscriptionId: string;
-  userId: string;
+  endUserId: string;
   telegramId: bigint;
   productId: string;
   productName: string;
@@ -78,7 +78,7 @@ export interface InvoiceFailedEvent {
 
 export interface AccessManuallyRevokedEvent {
   accessId: string;
-  userId: string;
+  endUserId: string;
   telegramId: bigint;
   productId: string;
   productName: string;

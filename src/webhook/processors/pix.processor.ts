@@ -35,7 +35,7 @@ export class PixWebhookProcessor implements IWebhookProcessor {
     const order = await this.prisma.order.findFirst({
       where: { gatewayTxid: data.txid },
       include: {
-        user: { select: { id: true, telegramId: true } },
+        endUser: { select: { id: true, telegramId: true } },
         product: { select: { id: true, name: true, chatId: true } },
       },
     });
@@ -86,7 +86,8 @@ export class PixWebhookProcessor implements IWebhookProcessor {
 
       return tx.access.create({
         data: {
-          userId: order.userId,
+          tenantId: order.tenantId,
+          endUserId: order.endUserId,
           productId: order.productId,
           chatId: order.product.chatId!,
           status: AccessStatus.ACTIVE,
@@ -102,8 +103,8 @@ export class PixWebhookProcessor implements IWebhookProcessor {
     // Emite evento para BotEventsService gerar o invite link e notificar o usuário
     const payload: PixConfirmedEvent = {
       orderId: order.id,
-      userId: order.userId,
-      telegramId: order.user.telegramId,
+      endUserId: order.endUserId,
+      telegramId: order.endUser.telegramId,
       productId: order.productId,
       productName: order.product.name,
       chatId: order.product.chatId!,

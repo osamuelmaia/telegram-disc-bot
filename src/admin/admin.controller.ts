@@ -34,14 +34,14 @@ export class AdminController {
     @Query('page') page?: string,
     @Query('limit') limit?: string,
     @Query('status') status?: string,
-    @Query('userId') userId?: string,
+    @Query('endUserId') endUserId?: string,
     @Query('search') search?: string,
   ) {
     const pagination = this.buildPagination(page, limit);
     return this.adminService.findOrders(
       {
         status: status as OrderStatus | undefined,
-        userId,
+        endUserId,
         search,
       },
       pagination,
@@ -62,11 +62,11 @@ export class AdminController {
     @Query('page') page?: string,
     @Query('limit') limit?: string,
     @Query('status') status?: string,
-    @Query('userId') userId?: string,
+    @Query('endUserId') endUserId?: string,
   ) {
     const pagination = this.buildPagination(page, limit);
     return this.adminService.findSubscriptions(
-      { status: status as SubscriptionStatus | undefined, userId },
+      { status: status as SubscriptionStatus | undefined, endUserId },
       pagination,
     );
   }
@@ -76,14 +76,6 @@ export class AdminController {
     const sub = await this.adminService.findSubscriptionById(id);
     if (!sub) throw new NotFoundException(`Subscription ${id} not found`);
     return sub;
-  }
-
-  @Post('subscriptions/:id/cancel')
-  cancelSubscription(
-    @Param('id') id: string,
-    @Body() body: { immediately?: boolean },
-  ) {
-    return this.adminService.cancelSubscription(id, body.immediately ?? false);
   }
 
   // ── Customers ───────────────────────────────────────────────────────────────
@@ -117,6 +109,7 @@ export class AdminController {
   createProduct(
     @Body()
     body: {
+      tenantId: string;
       name: string;
       description?: string;
       type: ProductType;
@@ -125,7 +118,6 @@ export class AdminController {
       billingInterval?: BillingInterval;
       trialDays?: number;
       chatId?: string;
-      metadata?: Record<string, unknown>;
     },
   ) {
     return this.adminService.createProduct(body);
@@ -143,7 +135,6 @@ export class AdminController {
       trialDays?: number;
       chatId?: string;
       active?: boolean;
-      metadata?: Record<string, unknown>;
     },
   ) {
     return this.adminService.updateProduct(id, body);
@@ -151,7 +142,7 @@ export class AdminController {
 
   @Delete('products/:id')
   deleteProduct(@Param('id') id: string) {
-    return this.adminService.deleteProduct(id);
+    return this.adminService.softDeleteProduct(id);
   }
 
   // ── Accesses ────────────────────────────────────────────────────────────────
@@ -160,25 +151,15 @@ export class AdminController {
   findAccesses(
     @Query('page') page?: string,
     @Query('limit') limit?: string,
-    @Query('userId') userId?: string,
+    @Query('endUserId') endUserId?: string,
     @Query('productId') productId?: string,
     @Query('status') status?: string,
   ) {
     const pagination = this.buildPagination(page, limit);
     return this.adminService.findAccesses(
-      { userId, productId, status: status as AccessStatus | undefined },
+      { endUserId, productId, status: status as AccessStatus | undefined },
       pagination,
     );
-  }
-
-  @Post('accesses/grant')
-  grantAccess(
-    @Body() body: { userId: string; productId: string; chatId: string; expiresAt?: string },
-  ) {
-    return this.adminService.grantAccess({
-      ...body,
-      expiresAt: body.expiresAt ? new Date(body.expiresAt) : undefined,
-    });
   }
 
   @Post('accesses/:id/revoke')
@@ -192,11 +173,6 @@ export class AdminController {
   findFailedWebhooks(@Query('page') page?: string, @Query('limit') limit?: string) {
     const pagination = this.buildPagination(page, limit);
     return this.adminService.findFailedWebhooks(pagination);
-  }
-
-  @Post('webhooks/:id/retry')
-  retryWebhook(@Param('id') id: string) {
-    return this.adminService.retryWebhook(id);
   }
 
   // ── Helpers ──────────────────────────────────────────────────────────────────

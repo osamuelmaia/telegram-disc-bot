@@ -150,11 +150,11 @@ export class WebhookService {
       if (!result) {
         // Nenhum processor encontrado para este tipo de evento
         this.logger.debug(
-          `[wh:${record.id}] No processor for event type "${eventType}" — marking IGNORED`,
+          `[wh:${record.id}] No processor for event type "${eventType}" — marking PROCESSED (ignored)`,
         );
         await this.prisma.webhookEvent.update({
           where: { id: record.id },
-          data: { status: WebhookStatus.IGNORED, processedAt: new Date() },
+          data: { status: WebhookStatus.PROCESSED, processedAt: new Date() },
         });
         return;
       }
