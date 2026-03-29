@@ -120,6 +120,13 @@ model Tenant {
   pixKeyType  String?
   pixKeyValue String?
 
+  personType       String?
+  document         String?
+  birthDate        String?
+  zipCode          String?
+  address          String?
+  profileCompleted Boolean  @default(false)
+
   platformFeePercent Decimal? @db.Decimal(5, 4)
 
   bot                   Bot?

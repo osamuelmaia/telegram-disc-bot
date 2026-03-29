@@ -31,7 +31,7 @@ export class TenantService {
     return { data, total, page, limit, pages: Math.ceil(total / limit) };
   }
 
-  update(id: string, data: Partial<{ name: string; pixKeyType: string; pixKeyValue: string; platformFeePercent: number }>) {
+  update(id: string, data: Partial<{ name: string; pixKeyType: string; pixKeyValue: string; platformFeePercent: number; personType: string; document: string; birthDate: string; zipCode: string; address: string; profileCompleted: boolean }>) {
     return this.prisma.tenant.update({ where: { id }, data });
   }
 

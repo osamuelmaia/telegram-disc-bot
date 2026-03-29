@@ -38,7 +38,17 @@ export class DashboardController {
   @Patch('me')
   updateProfile(
     @CurrentTenant() tenant: { id: string },
-    @Body() body: { name?: string; pixKeyType?: string; pixKeyValue?: string },
+    @Body() body: {
+      name?: string;
+      pixKeyType?: string;
+      pixKeyValue?: string;
+      personType?: string;
+      document?: string;
+      birthDate?: string;
+      zipCode?: string;
+      address?: string;
+      profileCompleted?: boolean;
+    },
   ) {
     return this.dashboardService.updateProfile(tenant.id, body);
   }

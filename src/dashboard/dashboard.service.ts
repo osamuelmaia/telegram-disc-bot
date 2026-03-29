@@ -40,6 +40,12 @@ export class DashboardService {
         pixKeyType: true,
         pixKeyValue: true,
         platformFeePercent: true,
+        personType: true,
+        document: true,
+        birthDate: true,
+        zipCode: true,
+        address: true,
+        profileCompleted: true,
         createdAt: true,
         updatedAt: true,
       },
@@ -49,13 +55,25 @@ export class DashboardService {
 
   async updateProfile(
     tenantId: string,
-    dto: { name?: string; pixKeyType?: string; pixKeyValue?: string },
+    dto: {
+      name?: string;
+      pixKeyType?: string;
+      pixKeyValue?: string;
+      personType?: string;
+      document?: string;
+      birthDate?: string;
+      zipCode?: string;
+      address?: string;
+      profileCompleted?: boolean;
+    },
   ) {
     return this.prisma.tenant.update({
       where: { id: tenantId },
       data: dto,
       select: {
-        id: true, name: true, email: true, pixKeyType: true, pixKeyValue: true, updatedAt: true,
+        id: true, name: true, email: true, pixKeyType: true, pixKeyValue: true,
+        personType: true, document: true, birthDate: true, zipCode: true, address: true,
+        profileCompleted: true, updatedAt: true,
       },
     });
   }

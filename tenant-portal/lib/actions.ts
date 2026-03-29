@@ -82,6 +82,24 @@ export async function logoutAction() {
 
 // ── Perfil ─────────────────────────────────────────────────────────────────────
 
+export async function completeProfileAction(formData: FormData) {
+  const token = cookies().get('token')?.value ?? '';
+  await fetch(`${API_BASE}/dashboard/me`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({
+      personType: formData.get('personType'),
+      document: formData.get('document'),
+      birthDate: formData.get('birthDate') || undefined,
+      zipCode: formData.get('zipCode'),
+      address: formData.get('address'),
+      profileCompleted: true,
+    }),
+    signal: AbortSignal.timeout(8000),
+  });
+  revalidatePath('/');
+}
+
 export async function updateProfileAction(formData: FormData) {
   const token = cookies().get('token')?.value ?? '';
   await fetch(`${API_BASE}/dashboard/me`, {
