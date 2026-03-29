@@ -27,10 +27,10 @@ WORKDIR /app
 
 # Apenas dependências de produção
 COPY package*.json ./
+COPY prisma ./prisma/
 RUN npm ci --omit=dev
 
-# Prisma client e schema (necessário para migrate deploy em runtime)
-COPY prisma ./prisma/
+# Gera o Prisma Client
 RUN npx prisma generate
 
 # Código compilado
