@@ -12,19 +12,29 @@ export async function registerAction(formData: FormData) {
   const email = formData.get('email') as string;
   const password = formData.get('password') as string;
 
-  const res = await fetch(`${API_BASE}/auth/register`, {
+  const registerRes = await fetch(`${API_BASE}/auth/register`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name, email, password }),
     signal: AbortSignal.timeout(8000),
   });
 
-  if (!res.ok) {
-    const status = res.status === 409 ? 'exists' : '1';
+  if (!registerRes.ok) {
+    const status = registerRes.status === 409 ? 'exists' : '1';
     redirect(`/register?error=${status}`);
   }
 
-  const { access_token } = await res.json();
+  // Registro ok — faz login automático para obter o token
+  const loginRes = await fetch(`${API_BASE}/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password }),
+    signal: AbortSignal.timeout(8000),
+  });
+
+  if (!loginRes.ok) redirect('/login');
+
+  const { access_token } = await loginRes.json();
 
   cookies().set('token', access_token, {
     httpOnly: true,
