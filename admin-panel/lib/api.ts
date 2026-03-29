@@ -8,9 +8,12 @@ import type {
   DashboardStats,
   Order,
   PaginatedResult,
+  PlatformConfig,
   Product,
   Subscription,
+  Tenant,
   WebhookEvent,
+  WithdrawalRequest,
 } from './types';
 
 const BASE_URL = process.env.ADMIN_API_URL ?? 'http://localhost:3000';
@@ -120,3 +123,43 @@ export const getFailedWebhooks = (params: Record<string, string> = {}) => {
 
 export const retryWebhook = (id: string) =>
   apiFetch<void>(`/admin/webhooks/${id}/retry`, { method: 'POST' });
+
+// ── Tenants ───────────────────────────────────────────────────────────────────
+
+export const getTenants = (params: Record<string, string> = {}) => {
+  const qs = new URLSearchParams(params).toString();
+  return apiFetch<PaginatedResult<Tenant>>(`/admin/tenants${qs ? `?${qs}` : ''}`);
+};
+
+export const getTenantById = (id: string) =>
+  apiFetch<Tenant>(`/admin/tenants/${id}`);
+
+export const suspendTenant = (id: string) =>
+  apiFetch<void>(`/admin/tenants/${id}/suspend`, { method: 'POST' });
+
+export const activateTenant = (id: string) =>
+  apiFetch<void>(`/admin/tenants/${id}/activate`, { method: 'POST' });
+
+// ── Withdrawals ───────────────────────────────────────────────────────────────
+
+export const getAdminWithdrawals = (params: Record<string, string> = {}) => {
+  const qs = new URLSearchParams(params).toString();
+  return apiFetch<PaginatedResult<WithdrawalRequest>>(`/admin/withdrawals${qs ? `?${qs}` : ''}`);
+};
+
+export const approveWithdrawal = (id: string) =>
+  apiFetch<void>(`/admin/withdrawals/${id}/approve`, { method: 'POST' });
+
+export const rejectWithdrawal = (id: string, reason: string) =>
+  apiFetch<void>(`/admin/withdrawals/${id}/reject`, {
+    method: 'POST',
+    body: JSON.stringify({ reason }),
+  });
+
+// ── Platform Config ───────────────────────────────────────────────────────────
+
+export const getPlatformConfig = () =>
+  apiFetch<PlatformConfig>('/admin/config');
+
+export const updatePlatformConfig = (body: Partial<PlatformConfig>) =>
+  apiFetch<PlatformConfig>('/admin/config', { method: 'PATCH', body: JSON.stringify(body) });

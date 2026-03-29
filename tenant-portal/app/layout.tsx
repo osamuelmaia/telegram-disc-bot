@@ -1,26 +1,28 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { cookies } from 'next/headers';
+import { logoutAction } from '@/lib/actions';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'Admin — Telegram Sales Bot',
-  description: 'Painel administrativo',
+  title: 'Dashboard — TenantSales',
+  description: 'Painel do parceiro',
 };
 
 const NAV = [
-  { href: '/', label: 'Dashboard', icon: '📊' },
-  { href: '/tenants', label: 'Parceiros', icon: '🏢' },
+  { href: '/', label: 'Visão Geral', icon: '📊' },
+  { href: '/bot', label: 'Bot', icon: '🤖' },
+  { href: '/gateways', label: 'Gateways', icon: '💳' },
+  { href: '/products', label: 'Produtos', icon: '📦' },
   { href: '/orders', label: 'Pedidos', icon: '🧾' },
   { href: '/subscriptions', label: 'Assinaturas', icon: '🔄' },
-  { href: '/customers', label: 'Clientes', icon: '👥' },
-  { href: '/products', label: 'Produtos', icon: '📦' },
-  { href: '/accesses', label: 'Acessos', icon: '🔑' },
-  { href: '/webhooks', label: 'Webhooks', icon: '⚡' },
+  { href: '/wallet', label: 'Carteira', icon: '💰' },
   { href: '/withdrawals', label: 'Saques', icon: '🏦' },
-  { href: '/config', label: 'Configurações', icon: '⚙️' },
 ];
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
+  const token = cookies().get('token')?.value;
+
   return (
     <html lang="pt-BR">
       <body className="bg-slate-100 text-gray-900 antialiased">
@@ -28,8 +30,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           {/* Sidebar */}
           <aside className="w-56 shrink-0 bg-slate-800 flex flex-col">
             <div className="px-5 py-5 border-b border-slate-700">
-              <p className="text-xs font-bold uppercase tracking-widest text-slate-400">Admin</p>
-              <p className="mt-0.5 text-sm font-semibold text-white">Sales Bot</p>
+              <p className="text-xs font-bold uppercase tracking-widest text-slate-400">Parceiro</p>
+              <p className="mt-0.5 text-sm font-semibold text-white">TenantSales</p>
             </div>
             <nav className="flex-1 py-4 space-y-0.5 px-2">
               {NAV.map(({ href, label, icon }) => (
@@ -43,12 +45,21 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 </Link>
               ))}
             </nav>
-            <div className="px-5 py-4 border-t border-slate-700">
-              <p className="text-xs text-slate-500">v0.1.0</p>
-            </div>
+            {token && (
+              <div className="px-4 py-4 border-t border-slate-700">
+                <form action={logoutAction}>
+                  <button
+                    type="submit"
+                    className="w-full text-left px-3 py-2 rounded-lg text-sm text-slate-400 hover:bg-slate-700 hover:text-white transition-colors"
+                  >
+                    Sair
+                  </button>
+                </form>
+              </div>
+            )}
           </aside>
 
-          {/* Main content */}
+          {/* Main */}
           <main className="flex-1 overflow-auto">
             <div className="p-8">{children}</div>
           </main>

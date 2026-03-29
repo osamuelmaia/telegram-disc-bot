@@ -100,3 +100,31 @@ export interface WebhookEvent {
   createdAt: string;
   processedAt?: string;
 }
+
+export interface Tenant {
+  id: string;
+  email: string;
+  name?: string;
+  status: 'ACTIVE' | 'SUSPENDED';
+  createdAt: string;
+  _count?: { orders: number; subscriptions: number };
+}
+
+export interface WithdrawalRequest {
+  id: string;
+  tenantId: string;
+  amount: string;
+  pixKeyType?: string;
+  pixKeyValue?: string;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'PAID';
+  rejectedReason?: string;
+  processedAt?: string;
+  createdAt: string;
+  tenant?: { email: string; name?: string };
+}
+
+export interface PlatformConfig {
+  feePercent: number;
+  minWithdrawalAmount: number;
+  withdrawalPaymentDays: number;
+}

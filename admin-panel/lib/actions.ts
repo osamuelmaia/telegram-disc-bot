@@ -60,3 +60,32 @@ export async function retryWebhookAction(id: string) {
   await api.retryWebhook(id);
   revalidatePath('/webhooks');
 }
+
+export async function suspendTenantAction(id: string) {
+  await api.suspendTenant(id);
+  revalidatePath('/tenants');
+}
+
+export async function activateTenantAction(id: string) {
+  await api.activateTenant(id);
+  revalidatePath('/tenants');
+}
+
+export async function approveWithdrawalAction(id: string) {
+  await api.approveWithdrawal(id);
+  revalidatePath('/withdrawals');
+}
+
+export async function rejectWithdrawalAction(id: string, reason: string) {
+  await api.rejectWithdrawal(id, reason);
+  revalidatePath('/withdrawals');
+}
+
+export async function updatePlatformConfigAction(formData: FormData) {
+  await api.updatePlatformConfig({
+    feePercent: parseFloat(formData.get('feePercent') as string),
+    minWithdrawalAmount: parseFloat(formData.get('minWithdrawalAmount') as string),
+    withdrawalPaymentDays: parseInt(formData.get('withdrawalPaymentDays') as string),
+  });
+  revalidatePath('/config');
+}
