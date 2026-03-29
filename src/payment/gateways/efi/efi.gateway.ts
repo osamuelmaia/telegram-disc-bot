@@ -1,5 +1,4 @@
-import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { Logger, UnauthorizedException } from '@nestjs/common';
 import axios, { AxiosInstance } from 'axios';
 import * as https from 'https';
 import {
@@ -14,7 +13,7 @@ import {
   SubscriptionOutput,
   SubscriptionStatusOutput,
 } from '../../interfaces/payment-gateway.interface';
-import { EFI_API_URLS, EfiConfig, efiConfigFromEnv } from './efi.config';
+import { EFI_API_URLS, EfiConfig } from './efi.config';
 import {
   EfiAccessTokenResponse,
   EfiCobResponse,
@@ -31,7 +30,6 @@ import {
 // NÃO suporta assinaturas (Efí não tem recorrência nativa — use Stripe).
 // =============================================================================
 
-@Injectable()
 export class EfiGateway implements IPaymentGateway {
   readonly gatewayName = 'efi';
 
@@ -42,8 +40,8 @@ export class EfiGateway implements IPaymentGateway {
   private accessToken: string | null = null;
   private tokenExpiresAt: Date | null = null;
 
-  constructor(private readonly configService: ConfigService) {
-    this.config = efiConfigFromEnv();
+  constructor(config: EfiConfig) {
+    this.config = config;
 
     const baseURL = this.config.sandbox ? EFI_API_URLS.sandbox : EFI_API_URLS.production;
 

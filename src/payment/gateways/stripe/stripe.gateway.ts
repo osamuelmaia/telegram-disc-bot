@@ -1,4 +1,4 @@
-import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
+import { Logger, UnauthorizedException } from '@nestjs/common';
 import Stripe from 'stripe';
 import {
   CancelSubscriptionInput,
@@ -12,7 +12,7 @@ import {
   SubscriptionOutput,
   SubscriptionStatusOutput,
 } from '../../interfaces/payment-gateway.interface';
-import { stripeConfigFromEnv } from './stripe.config';
+import { StripeConfig } from './stripe.config';
 import { RELEVANT_STRIPE_EVENTS, StripeSubscriptionStatus } from './stripe.types';
 
 // =============================================================================
@@ -28,7 +28,6 @@ import { RELEVANT_STRIPE_EVENTS, StripeSubscriptionStatus } from './stripe.types
 //   4. parseWebhookEvent() normaliza o evento → PaymentService processa
 // =============================================================================
 
-@Injectable()
 export class StripeGateway implements IPaymentGateway {
   readonly gatewayName = 'stripe';
 
@@ -36,9 +35,7 @@ export class StripeGateway implements IPaymentGateway {
   private readonly stripe: Stripe;
   private readonly webhookSecret: string;
 
-  constructor() {
-    const config = stripeConfigFromEnv();
-
+  constructor(config: StripeConfig) {
     this.stripe = new Stripe(config.secretKey, {
       apiVersion: config.apiVersion,
       typescript: true,

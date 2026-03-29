@@ -10,6 +10,9 @@ import { ProductModule } from './product/product.module';
 import { BotRegistryModule } from './bot-registry/bot-registry.module';
 import { AdminModule } from './admin/admin.module';
 import { WebhookModule } from './webhook/webhook.module';
+import { PaymentGatewayModule } from './payment-gateway/payment-gateway.module';
+import { OrderModule } from './order/order.module';
+import { WalletModule } from './wallet/wallet.module';
 
 @Controller()
 class HealthController {
@@ -25,10 +28,13 @@ class HealthController {
     EventEmitterModule.forRoot(),
     PrismaModule,
     CryptoModule,
+    PaymentGatewayModule,
     TenantModule,
     AuthModule,
     EndUserModule,
     ProductModule,
+    OrderModule,
+    WalletModule,
     BotRegistryModule,
     WebhookModule,
     AdminModule,

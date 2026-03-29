@@ -3,6 +3,7 @@ import { Telegraf, Scenes, session } from 'telegraf';
 import { BotContext } from './bot.context';
 import { EndUserService } from '../end-user/end-user.service';
 import { ProductService } from '../product/product.service';
+import { OrderService } from '../order/order.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { buildProductDetailKeyboard, buildProductListKeyboard } from './keyboards/product.keyboard';
 
@@ -13,20 +14,19 @@ export class BotHandlerFactory {
   constructor(
     private readonly endUserService: EndUserService,
     private readonly productService: ProductService,
+    private readonly orderService: OrderService,
     private readonly prisma: PrismaService,
   ) {}
 
   applyHandlers(bot: Telegraf<BotContext>, tenantId: string): void {
-    // Middleware: injeta tenantId no contexto
+    // Injeta tenantId no contexto
     bot.use((ctx, next) => {
       ctx.tenantId = tenantId;
       return next();
     });
 
-    // Session middleware
     bot.use(session());
 
-    // Stage (para scenes futuras)
     const stage = new Scenes.Stage<BotContext>([]);
     bot.use(stage.middleware());
 
@@ -95,6 +95,7 @@ export class BotHandlerFactory {
       const product = await this.productService.findById(tenantId, productId);
       if (!product) { await ctx.reply('Produto não encontrado.'); return; }
 
+      // Upsert do end user
       const endUser = await this.endUserService.upsert({
         tenantId,
         telegramId: BigInt(from.id),
@@ -102,13 +103,46 @@ export class BotHandlerFactory {
         firstName: from.first_name,
       });
 
-      // Emite evento para o OrderService processar (implementado na fase de gateways)
       await ctx.reply(
-        `Para pagar *${this.escape(product.name)}* via Pix, aguarde enquanto geramos o QR Code\\.`,
+        `⏳ Gerando QR Code para *${this.escape(product.name)}*\\.\\.\\.`,
         { parse_mode: 'MarkdownV2' },
       );
 
-      this.logger.log(`[${tenantId}] Pix requested: endUser=${endUser.id} product=${productId}`);
+      try {
+        const order = await this.orderService.createPixOrder(tenantId, endUser.id, productId);
+
+        if (!order.pixCopyPaste) {
+          await ctx.reply('❌ Não foi possível gerar o QR Code. Tente novamente mais tarde.');
+          return;
+        }
+
+        const expiresMinutes = order.expiresAt
+          ? Math.round((order.expiresAt.getTime() - Date.now()) / 60000)
+          : 60;
+
+        const msg = [
+          `💰 *${this.escape(product.name)}*`,
+          `Valor: R$ ${Number(order.amount).toFixed(2)}`,
+          ``,
+          `📋 *Pix Copia e Cola:*`,
+          `\`${order.pixCopyPaste}\``,
+          ``,
+          `⏰ Expira em ${expiresMinutes} minutos`,
+          ``,
+          `Após o pagamento, você receberá o link de acesso automaticamente\\.`,
+        ].join('\n');
+
+        await ctx.reply(msg, { parse_mode: 'MarkdownV2' });
+
+        // Envia imagem do QR Code se disponível
+        if (order.pixQrCodeBase64) {
+          const qrBuffer = Buffer.from(order.pixQrCodeBase64.replace(/^data:image\/\w+;base64,/, ''), 'base64');
+          await ctx.replyWithPhoto({ source: qrBuffer }, { caption: 'QR Code para pagamento Pix' });
+        }
+      } catch (err) {
+        this.logger.error(`[${tenantId}] Failed to create Pix order for product ${productId}: ${err}`);
+        await ctx.reply('❌ Não foi possível processar o pagamento. Verifique com o suporte.');
+      }
     });
 
     // /ajuda

@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { AccessStatus, OrderStatus } from '@prisma/client';
+import { Decimal } from '@prisma/client/runtime/library';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
   ParsedWebhookEvent,
@@ -8,6 +9,7 @@ import {
   WebhookEventType,
 } from '../../payment/interfaces/payment-gateway.interface';
 import { PAYMENT_EVENTS, PixConfirmedEvent } from '../../payment/payment.events';
+import { WalletService } from '../../wallet/wallet.service';
 import { IWebhookProcessor } from './webhook-processor.interface';
 
 @Injectable()
@@ -19,6 +21,7 @@ export class PixWebhookProcessor implements IWebhookProcessor {
   constructor(
     private readonly prisma: PrismaService,
     private readonly events: EventEmitter2,
+    private readonly walletService: WalletService,
   ) {}
 
   canHandle(eventType: WebhookEventType): boolean {
@@ -41,7 +44,6 @@ export class PixWebhookProcessor implements IWebhookProcessor {
     });
 
     if (!order) {
-      // Pode acontecer em sandbox com txids gerados manualmente
       this.logger.warn(`[wh:${webhookEventId}] No order found for txid=${data.txid} — skipping`);
       return;
     }
@@ -57,7 +59,6 @@ export class PixWebhookProcessor implements IWebhookProcessor {
       this.logger.error(
         `[wh:${webhookEventId}] Product ${order.product.id} has no chatId — cannot grant access`,
       );
-      // Ainda marca o pedido como pago, mas sem criar acesso
       await this.prisma.order.update({
         where: { id: order.id },
         data: {
@@ -69,7 +70,7 @@ export class PixWebhookProcessor implements IWebhookProcessor {
       return;
     }
 
-    // Tudo em transação: order + access na mesma operação atômica
+    // Atômico: pedido + acesso
     const access = await this.prisma.$transaction(async (tx) => {
       await tx.order.update({
         where: { id: order.id },
@@ -80,7 +81,6 @@ export class PixWebhookProcessor implements IWebhookProcessor {
         },
       });
 
-      // Verifica se já existe access para este pedido (reprocessamento)
       const existing = await tx.access.findUnique({ where: { orderId: order.id } });
       if (existing) return existing;
 
@@ -100,7 +100,21 @@ export class PixWebhookProcessor implements IWebhookProcessor {
       `[wh:${webhookEventId}] Order ${order.id} marked PAID — access=${access.id} granted`,
     );
 
-    // Emite evento para BotEventsService gerar o invite link e notificar o usuário
+    // Credita o valor líquido na carteira do tenant
+    try {
+      await this.walletService.creditSale(
+        order.tenantId,
+        order.id,
+        new Decimal(order.amount.toString()),
+        new Decimal(order.platformFeeAmount.toString()),
+      );
+    } catch (walletErr) {
+      // Não bloqueia o fluxo principal, mas loga o erro
+      this.logger.error(
+        `[wh:${webhookEventId}] Failed to credit wallet for order ${order.id}: ${walletErr}`,
+      );
+    }
+
     const payload: PixConfirmedEvent = {
       orderId: order.id,
       endUserId: order.endUserId,

@@ -1,9 +1,9 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { PaymentGateway, WebhookEvent, WebhookStatus } from '@prisma/client';
 import { PaginatedResult, paginate } from '../common/dto/paginated-result.type';
 import { PaginationDto } from '../common/dto/pagination.dto';
 import { IPaymentGateway, WebhookEventType } from '../payment/interfaces/payment-gateway.interface';
-import { EFI_GATEWAY, STRIPE_GATEWAY } from '../payment/types/gateway.types';
+import { GatewayFactoryService } from '../payment-gateway/gateway-factory.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { IWebhookProcessor } from './processors/webhook-processor.interface';
 import { PixWebhookProcessor } from './processors/pix.processor';
@@ -11,23 +11,15 @@ import { SubscriptionWebhookProcessor } from './processors/subscription.processo
 import { WebhookIdempotencyService } from './webhook-idempotency.service';
 
 // =============================================================================
-// WebhookService — Pipeline de processamento de webhooks
+// WebhookService — Pipeline de processamento de webhooks (multi-tenant)
 // =============================================================================
 //
-// Pipeline de execução para cada requisição recebida:
-//
-//   1. PERSIST    → salva o payload bruto com status PROCESSING (idempotência)
-//   2. SKIP?      → se duplicata já processada, retorna sem fazer nada
-//   3. PARSE      → gateway.parseWebhookEvent() normaliza o evento
-//   4. DISPATCH   → encontra o processor responsável pelo tipo de evento
-//   5. PROCESS    → processor.handle() atualiza o banco e emite eventos
-//   6. MARK       → marca PROCESSED ou FAILED com mensagem de erro
-//
-// Princípio de retorno HTTP:
-//   - Erros de validação (assinatura inválida) → lançar exceção → 401/400
-//   - Erros de processamento → capturar, marcar FAILED, retornar 200
-//     (o gateway não deve retentar eventos com falha de processamento;
-//      o reprocessamento é feito via retryFailed())
+// Fluxo para cada requisição:
+//   1. PARSE     → GatewayFactoryService resolve o gateway do tenant
+//   2. PERSIST   → salva payload bruto com idempotência
+//   3. DISPATCH  → encontra o processor para o tipo de evento
+//   4. PROCESS   → processor.handle() atualiza banco e emite eventos
+//   5. MARK      → PROCESSED ou FAILED
 // =============================================================================
 
 @Injectable()
@@ -40,39 +32,27 @@ export class WebhookService {
     private readonly prisma: PrismaService,
     private readonly pixProcessor: PixWebhookProcessor,
     private readonly subscriptionProcessor: SubscriptionWebhookProcessor,
-    @Inject(EFI_GATEWAY) private readonly efiGateway: IPaymentGateway,
-    @Inject(STRIPE_GATEWAY) private readonly stripeGateway: IPaymentGateway,
+    private readonly gatewayFactory: GatewayFactoryService,
   ) {
     this.processors = [pixProcessor, subscriptionProcessor];
   }
 
-  /**
-   * Ponto de entrada para todos os webhooks recebidos.
-   * Persiste o evento antes de qualquer processamento.
-   * Erros de processamento são capturados, logados e marcados como FAILED.
-   * Erros de validação (assinatura) propagam para o controller (retornam 4xx).
-   */
   async receive(
+    tenantId: string,
     gateway: PaymentGateway,
     rawBody: Buffer,
     headers: Record<string, string>,
   ): Promise<void> {
-    const gatewayInstance = this.resolveGateway(gateway);
+    const gatewayInstance = await this.gatewayFactory.getGateway(tenantId, gateway);
 
-    // STEP 1: Parseia o evento (validação de assinatura ocorreu no Guard)
-    // parseWebhookEvent aqui é usado apenas para extrair o eventId e eventType
-    // antes de persistir — se falhar, o evento não foi processado.
     let parsed: ReturnType<IPaymentGateway['parseWebhookEvent']>;
 
     try {
       parsed = gatewayInstance.parseWebhookEvent(rawBody, headers);
     } catch (err) {
-      // Erro de assinatura aqui (segunda verificação após guard) — propaga 4xx
-      throw err;
+      throw err; // Assinatura inválida — propaga 4xx
     }
 
-    // STEP 2: Persiste o payload bruto e adquire lock de processamento
-    // O payload raw é armazenado — importante para auditoria e replay
     const rawPayloadForStorage = this.sanitizeForStorage(rawBody);
 
     const { skip, record } = await this.idempotency.tryAcquire(
@@ -80,13 +60,11 @@ export class WebhookService {
       parsed.eventId,
       parsed.eventType,
       rawPayloadForStorage,
+      tenantId,
     );
 
-    if (skip || !record) {
-      return; // Evento já processado ou em processamento por outra instância
-    }
+    if (skip || !record) return;
 
-    // STEP 3: Dispatch para o processor responsável
     await this.dispatch(
       parsed.eventType,
       () => this.resolveProcessor(parsed.eventType)?.handle(parsed, record.id),
@@ -94,10 +72,6 @@ export class WebhookService {
     );
   }
 
-  /**
-   * Reprocessa um evento previamente marcado como FAILED.
-   * Usado por endpoints administrativos ou scripts de retry.
-   */
   async retryFailed(webhookEventId: string): Promise<void> {
     const record = await this.idempotency.reacquireForRetry(webhookEventId);
 
@@ -106,11 +80,6 @@ export class WebhookService {
       return;
     }
 
-    const gateway = this.resolveGateway(record.gateway);
-    const payload = record.payload as Record<string, unknown>;
-
-    // Reconstrói o evento normalizado a partir do payload armazenado
-    // (sem reverificar a assinatura — já foi validado na recepção original)
     const parsed = this.rebuildParsedEvent(record);
 
     await this.dispatch(
@@ -120,9 +89,6 @@ export class WebhookService {
     );
   }
 
-  /**
-   * Lista eventos com status FAILED para monitoramento, com paginação.
-   */
   async findFailed(pagination: PaginationDto = new PaginationDto()): Promise<PaginatedResult<WebhookEvent>> {
     const where = { status: WebhookStatus.FAILED };
     const [data, total] = await this.prisma.$transaction([
@@ -148,7 +114,6 @@ export class WebhookService {
       const result = process();
 
       if (!result) {
-        // Nenhum processor encontrado para este tipo de evento
         this.logger.debug(
           `[wh:${record.id}] No processor for event type "${eventType}" — marking PROCESSED (ignored)`,
         );
@@ -162,39 +127,23 @@ export class WebhookService {
       await result;
       await this.idempotency.markProcessed(record.id);
 
-      this.logger.log(
-        `[wh:${record.id}] Event "${eventType}" processed successfully`,
-      );
+      this.logger.log(`[wh:${record.id}] Event "${eventType}" processed successfully`);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
 
-      // Log seguro: nunca loga o payload completo (pode conter PII)
       this.logger.error(
         `[wh:${record.id}] Failed to process event "${eventType}": ${message}`,
         error instanceof Error ? error.stack : undefined,
       );
 
       await this.idempotency.markFailed(record.id, error);
-
-      // NÃO relança a exceção — o controller retorna 200 ao gateway
-      // O evento ficou salvo com status FAILED e pode ser reprocessado via retryFailed()
     }
-  }
-
-  private resolveGateway(gateway: PaymentGateway): IPaymentGateway {
-    if (gateway === PaymentGateway.EFI) return this.efiGateway;
-    if (gateway === PaymentGateway.STRIPE) return this.stripeGateway;
-    throw new Error(`Unsupported gateway: ${gateway}`);
   }
 
   private resolveProcessor(eventType: WebhookEventType): IWebhookProcessor | undefined {
     return this.processors.find((p) => p.canHandle(eventType));
   }
 
-  /**
-   * Parseia o payload armazenado no banco de volta para ParsedWebhookEvent.
-   * Usado no retry — evita re-chamar o gateway (sem raw body disponível).
-   */
   private rebuildParsedEvent(record: WebhookEvent) {
     return {
       eventId: record.eventId,
@@ -203,10 +152,6 @@ export class WebhookService {
     };
   }
 
-  /**
-   * Converte o rawBody para objeto JSON para armazenamento.
-   * Não loga o conteúdo — pode conter PII.
-   */
   private sanitizeForStorage(rawBody: Buffer): unknown {
     try {
       return JSON.parse(rawBody.toString('utf-8'));

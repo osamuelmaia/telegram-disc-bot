@@ -8,5 +8,5 @@ export interface BotSession extends Scenes.SceneSession {
 export interface BotContext extends Context {
   tenantId: string;
   session: BotSession;
-  scene: Scenes.SceneContextScene<BotContext, Scenes.SceneSession>;
+  scene: Scenes.SceneContextScene<BotContext, Scenes.SceneSessionData>;
 }
