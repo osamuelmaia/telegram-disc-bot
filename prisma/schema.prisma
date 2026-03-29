@@ -1,0 +1,423 @@
+// =============================================================================
+// Prisma Schema — Telegram Sales Bot
+// =============================================================================
+// Convenções:
+//   - IDs internos: cuid()
+//   - Tabelas:      snake_case via @@map
+//   - Dinheiro:     Decimal(10,2) — nunca Float
+//   - Timezone:     UTC em todos os timestamps
+//   - Metadados:    Json? para extensibilidade sem migration
+// =============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// =============================================================================
+// ENUMS
+// =============================================================================
+
+/// Tipo do produto: pagamento único via Pix ou assinatura recorrente via cartão
+enum ProductType {
+  ONE_TIME  // Pix avulso — acesso pontual ou vitalício
+  RECURRING // Assinatura — acesso enquanto ativa
+}
+
+/// Ciclo de cobrança para produtos recorrentes
+enum BillingInterval {
+  DAILY
+  WEEKLY
+  MONTHLY
+  QUARTERLY
+  YEARLY
+}
+
+/// Status do pedido Pix (pagamento avulso)
+enum OrderStatus {
+  PENDING   // aguardando pagamento
+  PAID      // pagamento confirmado via webhook
+  EXPIRED   // prazo expirado sem pagamento
+  FAILED    // falha no processamento pelo gateway
+  REFUNDED  // estornado ao pagador
+  CANCELLED // cancelado pelo sistema ou usuário
+}
+
+/// Status da assinatura recorrente
+enum SubscriptionStatus {
+  PENDING    // checkout gerado, cartão ainda não confirmado
+  TRIALING   // em período de trial gratuito
+  ACTIVE     // assinatura ativa e em dia
+  PAST_DUE   // cobrança em atraso, gateway ainda tentando
+  UNPAID     // múltiplas tentativas falhadas — acesso deve ser suspenso
+  CANCELLED  // cancelada (por usuário ou sistema)
+  EXPIRED    // período encerrado sem renovação
+}
+
+/// Status de cada cobrança individual dentro de uma assinatura
+enum PaymentStatus {
+  PENDING   // aguardando resultado
+  PAID      // cobrança paga com sucesso
+  FAILED    // tentativa de cobrança falhou
+  REFUNDED  // cobrança estornada
+  VOIDED    // anulada antes de ser cobrada
+}
+
+/// Status do acesso ao grupo/canal do Telegram
+enum AccessStatus {
+  ACTIVE   // usuário com acesso liberado
+  REVOKED  // acesso revogado (assinatura cancelada, expirada etc.)
+}
+
+/// Gateways de pagamento suportados
+enum PaymentGateway {
+  EFI          // Efí Bank (ex-Gerencianet) — Pix
+  STRIPE       // Stripe — Cartão e recorrência
+  MERCADO_PAGO // Mercado Pago — Pix e cartão
+  ASAAS        // Asaas — solução all-in-one BR
+}
+
+/// Status do processamento de um evento de webhook
+enum WebhookStatus {
+  RECEIVED   // recebido e persistido, ainda não processado
+  PROCESSING // sendo processado (lock otimista)
+  PROCESSED  // processado com sucesso
+  FAILED     // erro durante o processamento (ver campo `error`)
+  IGNORED    // duplicata ou evento sem ação necessária
+}
+
+// =============================================================================
+// USER
+// =============================================================================
+
+/// Usuário identificado pelo Telegram. Sem autenticação própria.
+model User {
+  id         String  @id @default(cuid())
+  telegramId BigInt  @unique        // chat_id do Telegram (pode ser negativo para grupos)
+  username   String?                // @handle, sem o @
+  firstName  String?
+  lastName   String?
+
+  /// Dados pessoais opcionais — alguns gateways Pix exigem CPF/nome
+  phone String? // formato E.164: +5511999999999
+  cpf   String? // somente dígitos, sem formatação — armazenar criptografado em produção
+
+  orders        Order[]
+  subscriptions Subscription[]
+  accesses      Access[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([telegramId])
+  @@map("users")
+}
+
+// =============================================================================
+// PRODUCT
+// =============================================================================
+
+/// Produto à venda. Um produto pode ser avulso (Pix) ou recorrente (cartão).
+model Product {
+  id          String      @id @default(cuid())
+  name        String
+  description String?
+  type        ProductType
+
+  price    Decimal @db.Decimal(10, 2)
+  currency String  @default("BRL")
+
+  /// Para recorrentes: intervalo de cobrança
+  billingInterval BillingInterval?
+  /// Dias de trial gratuito antes da primeira cobrança
+  trialDays       Int?
+
+  /// ID do grupo ou canal do Telegram cujo acesso será liberado após pagamento
+  /// Pode ser negativo (grupos/supergrupos) ou positivo (canais privados)
+  chatId String?
+
+  /// Produto ativo e visível no bot
+  active Boolean @default(true)
+
+  /// Dados extras livres: ex. {"maxUsers": 1, "accessDuration": "30d"}
+  metadata Json?
+
+  orders        Order[]
+  subscriptions Subscription[]
+  accesses      Access[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([type, active])
+  @@map("products")
+}
+
+// =============================================================================
+// ORDER — pagamento avulso via Pix
+// =============================================================================
+
+/// Representa um pedido de pagamento único. Criado quando o usuário escolhe Pix.
+model Order {
+  id        String @id @default(cuid())
+  userId    String
+  productId String
+
+  status  OrderStatus    @default(PENDING)
+  gateway PaymentGateway
+
+  // ── IDs externos ─────────────────────────────────────────────────────────
+
+  /// ID da cobrança no gateway (ex: txid do Efí, id do MP)
+  gatewayOrderId String?
+  /// txid Pix gerado pelo gateway (Efí Bank)
+  gatewayTxid    String?
+  /// E2E ID recebido no webhook de confirmação (para conciliação bancária)
+  pixEndToEndId  String?
+
+  // ── Valores ──────────────────────────────────────────────────────────────
+
+  amount   Decimal @db.Decimal(10, 2)
+  currency String  @default("BRL")
+
+  // ── Dados do QR Code Pix ─────────────────────────────────────────────────
+
+  /// Código copia-e-cola (payload EMV do QR Code)
+  pixCopyPaste    String?
+  /// QR Code em base64 para envio direto como imagem no Telegram
+  pixQrCodeBase64 String?
+  /// URL pública da imagem do QR Code (alternativa ao base64)
+  pixQrCodeUrl    String?
+
+  // ── Ciclo de vida ────────────────────────────────────────────────────────
+
+  expiresAt DateTime? // quando a cobrança Pix expira no gateway
+  paidAt    DateTime? // preenchido ao confirmar via webhook
+
+  // ── Auditoria ────────────────────────────────────────────────────────────
+
+  /// Resposta bruta do gateway ao criar a cobrança (para debug)
+  gatewayResponse Json?
+  /// Dados livres adicionais
+  metadata Json?
+
+  user    User    @relation(fields: [userId], references: [id])
+  product Product @relation(fields: [productId], references: [id])
+  access  Access?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([status])
+  @@index([gatewayOrderId])
+  @@index([gatewayTxid])
+  @@map("orders")
+}
+
+// =============================================================================
+// SUBSCRIPTION — assinatura recorrente via cartão
+// =============================================================================
+
+/// Representa uma assinatura ativa ou encerrada.
+/// O checkout é sempre externo (ex: Stripe Checkout) — sem PCI scope no bot.
+model Subscription {
+  id        String @id @default(cuid())
+  userId    String
+  productId String
+
+  status  SubscriptionStatus @default(PENDING)
+  gateway PaymentGateway
+
+  // ── IDs externos ─────────────────────────────────────────────────────────
+
+  /// ID da subscription no gateway (ex: sub_xxx no Stripe)
+  gatewaySubscriptionId String?
+  /// ID do customer no gateway (ex: cus_xxx no Stripe)
+  gatewayCustomerId     String?
+  /// ID do preço/plano no gateway (ex: price_xxx no Stripe)
+  gatewayPriceId        String?
+  /// ID da sessão de checkout (ex: cs_xxx no Stripe Checkout)
+  checkoutSessionId     String?
+
+  // ── Checkout ─────────────────────────────────────────────────────────────
+
+  /// Link de checkout externo enviado ao usuário no Telegram
+  checkoutUrl String?
+
+  // ── Período de cobrança atual ─────────────────────────────────────────────
+
+  currentPeriodStart DateTime?
+  currentPeriodEnd   DateTime?
+
+  // ── Trial ─────────────────────────────────────────────────────────────────
+
+  trialEndsAt DateTime?
+
+  // ── Cancelamento ─────────────────────────────────────────────────────────
+
+  /// true = cancelar no fim do período, false = cancelar imediatamente
+  cancelAtPeriodEnd  Boolean   @default(false)
+  cancelledAt        DateTime?
+  cancellationReason String?
+
+  // ── Auditoria ────────────────────────────────────────────────────────────
+
+  metadata Json?
+
+  user     User    @relation(fields: [userId], references: [id])
+  product  Product @relation(fields: [productId], references: [id])
+  access   Access?
+  payments SubscriptionPayment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([status])
+  @@index([gatewaySubscriptionId])
+  @@index([gatewayCustomerId])
+  @@map("subscriptions")
+}
+
+// =============================================================================
+// SUBSCRIPTION PAYMENT — histórico de cobranças de uma assinatura
+// =============================================================================
+
+/// Cada cobrança individual dentro do ciclo de vida de uma assinatura.
+/// Permite rastrear falhas, reembolsos e conciliação por período.
+model SubscriptionPayment {
+  id             String @id @default(cuid())
+  subscriptionId String
+
+  // ── IDs externos ─────────────────────────────────────────────────────────
+
+  /// ID da fatura/invoice no gateway (ex: in_xxx no Stripe)
+  gatewayInvoiceId String?
+  /// ID do payment intent ou charge no gateway (ex: pi_xxx no Stripe)
+  gatewayPaymentId String?
+
+  // ── Valores ──────────────────────────────────────────────────────────────
+
+  amount   Decimal       @db.Decimal(10, 2)
+  currency String        @default("BRL")
+  status   PaymentStatus @default(PENDING)
+
+  // ── Período referente a esta cobrança ────────────────────────────────────
+
+  periodStart DateTime?
+  periodEnd   DateTime?
+
+  // ── Ciclo de vida ────────────────────────────────────────────────────────
+
+  paidAt   DateTime?
+  failedAt DateTime?
+
+  /// Resposta bruta do gateway (para debug e auditoria)
+  gatewayResponse Json?
+  metadata        Json?
+
+  subscription Subscription @relation(fields: [subscriptionId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([subscriptionId])
+  @@index([gatewayInvoiceId])
+  @@index([status])
+  @@map("subscription_payments")
+}
+
+// =============================================================================
+// ACCESS — controle de acesso ao grupo/canal do Telegram
+// =============================================================================
+
+/// Registro de acesso concedido a um usuário para um chat do Telegram.
+/// Vinculado a um Order (Pix) OU a uma Subscription (cartão) — nunca ambos.
+model Access {
+  id        String @id @default(cuid())
+  userId    String
+  productId String
+
+  /// ID do chat/grupo/canal no Telegram
+  chatId String
+
+  status AccessStatus @default(ACTIVE)
+
+  /// Link de convite gerado via createChatInviteLink (uso único, expira após 1 uso)
+  inviteLink String?
+
+  // ── Origem do acesso (mutuamente exclusivos) ──────────────────────────────
+
+  orderId        String? @unique // acesso via pagamento Pix
+  subscriptionId String? @unique // acesso via assinatura
+
+  // ── Ciclo de vida ────────────────────────────────────────────────────────
+
+  grantedAt     DateTime  @default(now())
+  revokedAt     DateTime?
+  revokedReason String?
+
+  /// Para acessos com prazo definido (ex: produto ONE_TIME com validade)
+  expiresAt DateTime?
+
+  user         User          @relation(fields: [userId], references: [id])
+  product      Product       @relation(fields: [productId], references: [id])
+  order        Order?        @relation(fields: [orderId], references: [id])
+  subscription Subscription? @relation(fields: [subscriptionId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([chatId])
+  @@index([status])
+  @@map("accesses")
+}
+
+// =============================================================================
+// WEBHOOK EVENT — idempotência e auditoria de eventos recebidos
+// =============================================================================
+
+/// Cada evento recebido de um gateway é registrado aqui antes de ser processado.
+///
+/// Fluxo de idempotência:
+///   1. Webhook chega → tenta INSERT com @@unique([gateway, eventId])
+///   2. Se conflito (duplicata) → retorna 200 sem reprocessar
+///   3. Se novo → status RECEIVED → processar → status PROCESSED ou FAILED
+///
+/// O campo `eventId` deve ser o ID nativo do gateway:
+///   - Efí Bank:    campo `id` do payload
+///   - Stripe:      campo `id` do Event object (evt_xxx)
+///   - Asaas:       campo `id` do evento
+model WebhookEvent {
+  id        String         @id @default(cuid())
+  gateway   PaymentGateway
+  eventId   String         // ID único fornecido pelo gateway — chave de idempotência
+  eventType String         // ex: "charge.paid", "invoice.payment_succeeded"
+
+  status WebhookStatus @default(RECEIVED)
+
+  /// Payload bruto recebido — preservar integralmente para auditoria e replay
+  payload Json
+
+  processedAt DateTime?
+  /// Mensagem de erro em caso de falha no processamento
+  error String?
+
+  /// Número de tentativas de processamento (para retry logic)
+  attempts Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// Garante idempotência: mesmo gateway + mesmo eventId jamais será inserido duas vezes
+  @@unique([gateway, eventId])
+  @@index([gateway, eventType])
+  @@index([status])
+  @@map("webhook_events")
+}
