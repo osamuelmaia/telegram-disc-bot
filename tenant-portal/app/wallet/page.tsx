@@ -1,7 +1,7 @@
-import { getWallet, getWalletTransactions } from '@/lib/api';
+import Link from 'next/link';
+import { getWallet, getWalletTransactions, getWithdrawals } from '@/lib/api';
 import { requestWithdrawalAction } from '@/lib/actions';
 import { Badge } from '@/components/Badge';
-import { StatsCard } from '@/components/StatsCard';
 
 type Variant = 'green' | 'yellow' | 'red' | 'blue' | 'gray' | 'purple';
 
@@ -16,131 +16,297 @@ function txBadge(type: string): { label: string; variant: Variant } {
   return map[type] ?? { label: type, variant: 'gray' };
 }
 
+function withdrawalStatusBadge(status: string): { label: string; variant: Variant } {
+  const map: Record<string, { label: string; variant: Variant }> = {
+    PENDING: { label: 'Pendente', variant: 'yellow' },
+    APPROVED: { label: 'Aprovado', variant: 'blue' },
+    PROCESSING: { label: 'Processando', variant: 'blue' },
+    COMPLETED: { label: 'Concluído', variant: 'green' },
+    REJECTED: { label: 'Rejeitado', variant: 'red' },
+    FAILED: { label: 'Falhou', variant: 'red' },
+  };
+  return map[status] ?? { label: status, variant: 'gray' };
+}
+
+function fmt(val: string | number | unknown) {
+  const n = typeof val === 'string' ? parseFloat(val) : (val as number);
+  return isNaN(n) ? '0,00' : n.toLocaleString('pt-BR', { minimumFractionDigits: 2 });
+}
+
+function Pagination({ pages, currentPage, tab }: { pages: number; currentPage: number; tab: string }) {
+  if (pages <= 1) return null;
+  return (
+    <div className="flex gap-2 justify-center text-sm pt-2">
+      {Array.from({ length: pages }, (_, i) => i + 1).map((p) => (
+        <a
+          key={p}
+          href={`?tab=${tab}&page=${p}`}
+          className={`px-3 py-1.5 rounded-lg border transition-colors ${
+            p === currentPage
+              ? 'bg-indigo-600 text-white border-indigo-600'
+              : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+          }`}
+        >
+          {p}
+        </a>
+      ))}
+    </div>
+  );
+}
+
 export default async function WalletPage({
   searchParams,
 }: {
   searchParams: Record<string, string>;
 }) {
+  const tab = searchParams.tab === 'withdrawals' ? 'withdrawals' : 'balance';
   const page = searchParams.page ?? '1';
-  const [wallet, txRes] = await Promise.all([
+
+  const [wallet, txRes, withdrawalsRes] = await Promise.all([
     getWallet().catch(() => ({} as Record<string, unknown>)),
-    getWalletTransactions({ page, limit: '20' }).catch(() => ({
-      data: [],
-      total: 0,
-      pages: 1,
-    })),
+    getWalletTransactions({ page: tab === 'balance' ? page : '1', limit: '20' }).catch(() => ({ data: [], total: 0, pages: 1 })),
+    getWithdrawals({ page: tab === 'withdrawals' ? page : '1', limit: '20' }).catch(() => ({ data: [], total: 0, pages: 1 })),
   ]);
 
   const balance = typeof wallet.balance === 'string' ? parseFloat(wallet.balance) : 0;
-  const totalEarned = typeof wallet.totalEarned === 'string' ? parseFloat(wallet.totalEarned) : 0;
+  const totalReceived = typeof wallet.totalReceived === 'string' ? parseFloat(wallet.totalReceived) : 0;
   const totalWithdrawn = typeof wallet.totalWithdrawn === 'string' ? parseFloat(wallet.totalWithdrawn) : 0;
+
   const txs = (txRes as Record<string, unknown>).data as Record<string, unknown>[];
-  const pages = (txRes as Record<string, unknown>).pages as number;
+  const txPages = (txRes as Record<string, unknown>).pages as number;
+
+  const withdrawals = (withdrawalsRes as Record<string, unknown>).data as Record<string, unknown>[];
+  const wTotal = (withdrawalsRes as Record<string, unknown>).total as number;
+  const wPages = (withdrawalsRes as Record<string, unknown>).pages as number;
+
   const currentPage = parseInt(page);
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Carteira</h1>
-        <p className="text-sm text-gray-500 mt-1">Saldo e histórico de transações.</p>
+        <p className="text-sm text-gray-500 mt-1">Saldo, extrato e saques</p>
       </div>
 
+      {/* Stats */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <StatsCard title="Saldo disponível" value={`R$ ${balance.toFixed(2)}`} />
-        <StatsCard title="Total recebido" value={`R$ ${totalEarned.toFixed(2)}`} />
-        <StatsCard title="Total sacado" value={`R$ ${totalWithdrawn.toFixed(2)}`} />
-      </div>
-
-      {/* Withdrawal form */}
-      <div className="bg-white rounded-xl border border-gray-200 p-6 max-w-md">
-        <h2 className="text-base font-semibold text-gray-900 mb-4">Solicitar saque</h2>
-        <form action={requestWithdrawalAction} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Valor (R$)</label>
-            <input
-              name="amount"
-              type="number"
-              step="0.01"
-              min="0.01"
-              max={balance}
-              required
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
-              placeholder="0.00"
-            />
-            <p className="mt-1 text-xs text-gray-400">Máx: R$ {balance.toFixed(2)}</p>
-          </div>
-          <button
-            type="submit"
-            className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg px-4 py-2 text-sm font-medium transition-colors"
-            disabled={balance <= 0}
-          >
-            Solicitar
-          </button>
-        </form>
-      </div>
-
-      {/* Transactions */}
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-        <div className="px-4 py-3 border-b border-gray-200">
-          <h2 className="text-sm font-semibold text-gray-900">Extrato</h2>
+        <div className="bg-white rounded-xl border border-gray-200 p-5">
+          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Saldo disponível</p>
+          <p className="text-3xl font-bold text-gray-900 mt-1">R$ {fmt(balance)}</p>
+          <p className="text-xs text-gray-400 mt-1">Disponível para saque</p>
         </div>
-        <table className="w-full text-sm">
-          <thead className="bg-gray-50 border-b border-gray-200">
-            <tr>
-              <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Tipo</th>
-              <th className="text-right px-4 py-3 text-xs font-medium text-gray-500 uppercase">Valor</th>
-              <th className="text-right px-4 py-3 text-xs font-medium text-gray-500 uppercase">Saldo após</th>
-              <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Data</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {txs.length === 0 && (
-              <tr>
-                <td colSpan={4} className="text-center py-8 text-gray-400 text-sm">
-                  Sem movimentações.
-                </td>
-              </tr>
-            )}
-            {txs.map((tx) => {
-              const { label, variant } = txBadge(tx.type as string);
-              const amount = parseFloat(tx.amount as string);
-              const isCredit = (tx.type as string).startsWith('CREDIT');
-              return (
-                <tr key={tx.id as string} className="hover:bg-gray-50">
-                  <td className="px-4 py-3">
-                    <Badge label={label} variant={variant} />
-                  </td>
-                  <td className={`px-4 py-3 text-right font-medium ${isCredit ? 'text-green-700' : 'text-red-700'}`}>
-                    {isCredit ? '+' : '-'}R$ {amount.toFixed(2)}
-                  </td>
-                  <td className="px-4 py-3 text-right text-gray-600">
-                    R$ {parseFloat(tx.balanceAfter as string).toFixed(2)}
-                  </td>
-                  <td className="px-4 py-3 text-gray-500">
-                    {new Date(tx.createdAt as string).toLocaleString('pt-BR')}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+        <div className="bg-white rounded-xl border border-gray-200 p-5">
+          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Total recebido</p>
+          <p className="text-3xl font-bold text-gray-900 mt-1">R$ {fmt(totalReceived)}</p>
+          <p className="text-xs text-gray-400 mt-1">Acumulado de vendas</p>
+        </div>
+        <div className="bg-white rounded-xl border border-gray-200 p-5">
+          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Total sacado</p>
+          <p className="text-3xl font-bold text-gray-900 mt-1">R$ {fmt(totalWithdrawn)}</p>
+          <p className="text-xs text-gray-400 mt-1">{wTotal} saque{wTotal !== 1 ? 's' : ''} realizado{wTotal !== 1 ? 's' : ''}</p>
+        </div>
       </div>
 
-      {pages > 1 && (
-        <div className="flex gap-2 justify-center text-sm">
-          {Array.from({ length: pages }, (_, i) => i + 1).map((p) => (
-            <a
-              key={p}
-              href={`?page=${p}`}
-              className={`px-3 py-1.5 rounded-lg border transition-colors ${
-                p === currentPage
-                  ? 'bg-indigo-600 text-white border-indigo-600'
-                  : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-              }`}
-            >
-              {p}
-            </a>
-          ))}
+      {/* Tabs */}
+      <div className="flex gap-1 bg-gray-100 p-1 rounded-xl w-fit">
+        <Link
+          href="?tab=balance&page=1"
+          className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+            tab === 'balance'
+              ? 'bg-white text-gray-900 shadow-sm'
+              : 'text-gray-500 hover:text-gray-700'
+          }`}
+        >
+          Extrato
+        </Link>
+        <Link
+          href="?tab=withdrawals&page=1"
+          className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+            tab === 'withdrawals'
+              ? 'bg-white text-gray-900 shadow-sm'
+              : 'text-gray-500 hover:text-gray-700'
+          }`}
+        >
+          Saques
+          {wTotal > 0 && <span className="ml-2 text-xs bg-gray-200 text-gray-600 px-1.5 py-0.5 rounded-full">{wTotal}</span>}
+        </Link>
+      </div>
+
+      {/* Extrato tab */}
+      {tab === 'balance' && (
+        <div className="space-y-5">
+          {/* Withdrawal form */}
+          <div className="bg-white rounded-xl border border-gray-200 p-5">
+            <h2 className="text-sm font-semibold text-gray-900 mb-3">Solicitar saque</h2>
+            {balance <= 0 ? (
+              <p className="text-sm text-gray-500">Você não possui saldo disponível para saque.</p>
+            ) : (
+              <form action={requestWithdrawalAction} className="flex items-end gap-3">
+                <div className="flex-1 max-w-xs">
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Valor (R$)</label>
+                  <input
+                    name="amount"
+                    type="number"
+                    step="0.01"
+                    min="0.01"
+                    max={balance}
+                    required
+                    className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+                    placeholder={`máx. R$ ${fmt(balance)}`}
+                  />
+                </div>
+                <button
+                  type="submit"
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg px-4 py-2 text-sm font-medium transition-colors whitespace-nowrap"
+                >
+                  Solicitar saque
+                </button>
+              </form>
+            )}
+          </div>
+
+          {/* Transaction history */}
+          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+            <div className="px-4 py-3 border-b border-gray-100">
+              <h2 className="text-sm font-semibold text-gray-900">Histórico de transações</h2>
+            </div>
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 border-b border-gray-200">
+                <tr>
+                  <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Tipo</th>
+                  <th className="text-right px-4 py-3 text-xs font-medium text-gray-500 uppercase">Valor</th>
+                  <th className="text-right px-4 py-3 text-xs font-medium text-gray-500 uppercase">Saldo após</th>
+                  <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Data</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {txs.length === 0 && (
+                  <tr>
+                    <td colSpan={4} className="text-center py-12 text-sm">
+                      <p className="font-medium text-gray-500">Sem movimentações</p>
+                      <p className="text-xs text-gray-400 mt-1">As transações aparecerão aqui após as primeiras vendas.</p>
+                    </td>
+                  </tr>
+                )}
+                {txs.map((tx) => {
+                  const { label, variant } = txBadge(tx.type as string);
+                  const amount = parseFloat(tx.amount as string);
+                  const isCredit = (tx.type as string).startsWith('CREDIT');
+                  return (
+                    <tr key={tx.id as string} className="hover:bg-gray-50 transition-colors">
+                      <td className="px-4 py-3">
+                        <Badge label={label} variant={variant} />
+                        {tx.description && (
+                          <p className="text-xs text-gray-400 mt-0.5">{tx.description as string}</p>
+                        )}
+                      </td>
+                      <td className={`px-4 py-3 text-right font-semibold ${isCredit ? 'text-green-700' : 'text-red-600'}`}>
+                        {isCredit ? '+' : '−'}R$ {fmt(amount)}
+                      </td>
+                      <td className="px-4 py-3 text-right text-gray-500 tabular-nums">
+                        R$ {fmt(tx.balanceAfter as string)}
+                      </td>
+                      <td className="px-4 py-3 text-gray-400 text-xs">
+                        {new Date(tx.createdAt as string).toLocaleString('pt-BR')}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <Pagination pages={txPages} currentPage={currentPage} tab="balance" />
+        </div>
+      )}
+
+      {/* Saques tab */}
+      {tab === 'withdrawals' && (
+        <div className="space-y-5">
+          {/* Withdrawal request form inline */}
+          <div className="bg-white rounded-xl border border-gray-200 p-5">
+            <h2 className="text-sm font-semibold text-gray-900 mb-3">Novo saque</h2>
+            {balance <= 0 ? (
+              <p className="text-sm text-gray-500">Você não possui saldo disponível para saque.</p>
+            ) : (
+              <form action={requestWithdrawalAction} className="flex items-end gap-3">
+                <div className="flex-1 max-w-xs">
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Valor (R$)</label>
+                  <input
+                    name="amount"
+                    type="number"
+                    step="0.01"
+                    min="0.01"
+                    max={balance}
+                    required
+                    className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+                    placeholder={`máx. R$ ${fmt(balance)}`}
+                  />
+                </div>
+                <button
+                  type="submit"
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg px-4 py-2 text-sm font-medium transition-colors whitespace-nowrap"
+                >
+                  Solicitar saque
+                </button>
+              </form>
+            )}
+          </div>
+
+          {/* Withdrawals table */}
+          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+            <div className="px-4 py-3 border-b border-gray-100">
+              <h2 className="text-sm font-semibold text-gray-900">Histórico de saques</h2>
+            </div>
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 border-b border-gray-200">
+                <tr>
+                  <th className="text-right px-4 py-3 text-xs font-medium text-gray-500 uppercase">Valor</th>
+                  <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Chave Pix</th>
+                  <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Status</th>
+                  <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Processado em</th>
+                  <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Solicitado em</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {withdrawals.length === 0 && (
+                  <tr>
+                    <td colSpan={5} className="text-center py-12 text-sm">
+                      <p className="font-medium text-gray-500">Nenhum saque solicitado</p>
+                      <p className="text-xs text-gray-400 mt-1">Seus saques aparecerão aqui após a solicitação.</p>
+                    </td>
+                  </tr>
+                )}
+                {withdrawals.map((w) => {
+                  const { label, variant } = withdrawalStatusBadge(w.status as string);
+                  return (
+                    <tr key={w.id as string} className="hover:bg-gray-50 transition-colors">
+                      <td className="px-4 py-3 text-right font-semibold text-gray-900">
+                        R$ {fmt(w.amount as string)}
+                      </td>
+                      <td className="px-4 py-3 text-gray-600 font-mono text-xs">
+                        {(w.pixKeyValue as string) ?? '—'}
+                        {!!w.pixKeyType && (
+                          <span className="ml-1 text-gray-400">({w.pixKeyType as string})</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        <Badge label={label} variant={variant} />
+                      </td>
+                      <td className="px-4 py-3 text-gray-500 text-xs">
+                        {w.approvedAt
+                          ? new Date(w.approvedAt as string).toLocaleDateString('pt-BR')
+                          : '—'}
+                      </td>
+                      <td className="px-4 py-3 text-gray-500 text-xs">
+                        {new Date(w.createdAt as string).toLocaleDateString('pt-BR')}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <Pagination pages={wPages} currentPage={currentPage} tab="withdrawals" />
         </div>
       )}
     </div>

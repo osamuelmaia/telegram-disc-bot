@@ -8,10 +8,8 @@ import {
   CreditCard,
   Package,
   ShoppingBag,
-  RefreshCw,
   Wallet,
-  ArrowDownToLine,
-  Info,
+  CircleUser,
   LogOut,
   type LucideIcon,
 } from 'lucide-react';
@@ -23,11 +21,9 @@ const NAV: { href: string; label: string; icon: LucideIcon }[] = [
   { href: '/bot', label: 'Meu Bot', icon: Bot },
   { href: '/gateways', label: 'Pagamentos', icon: CreditCard },
   { href: '/products', label: 'Produtos', icon: Package },
-  { href: '/orders', label: 'Pedidos', icon: ShoppingBag },
-  { href: '/subscriptions', label: 'Assinaturas', icon: RefreshCw },
+  { href: '/sales', label: 'Vendas', icon: ShoppingBag },
   { href: '/wallet', label: 'Carteira', icon: Wallet },
-  { href: '/withdrawals', label: 'Saques', icon: ArrowDownToLine },
-  { href: '/info', label: 'Minha Conta', icon: Info },
+  { href: '/info', label: 'Minha Conta', icon: CircleUser },
 ];
 
 const AUTH_ROUTES = ['/login', '/register'];
@@ -71,7 +67,7 @@ export default function AppShell({
               <Link
                 key={href}
                 href={href}
-                className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all group ${
+                className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
                   active
                     ? 'bg-indigo-600 text-white shadow-sm'
                     : 'text-gray-400 hover:bg-gray-800 hover:text-white'
@@ -104,10 +100,7 @@ export default function AppShell({
 
       {/* Content area */}
       <div className="flex-1 flex flex-col min-h-screen overflow-hidden">
-        {/* Onboarding banner */}
         {!profileCompleted && <OnboardingBanner />}
-
-        {/* Main */}
         <main className="flex-1 overflow-auto">
           <div className="max-w-5xl mx-auto p-8">{children}</div>
         </main>
