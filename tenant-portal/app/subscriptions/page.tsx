@@ -68,7 +68,7 @@ export default async function SubscriptionsPage({
                 <tr key={s.id as string} className="hover:bg-gray-50">
                   <td className="px-4 py-3 text-gray-700">{product?.name as string ?? '—'}</td>
                   <td className="px-4 py-3 text-gray-600">
-                    {user?.username ? `@${user.username}` : user?.firstName ?? '—'}
+                    {user?.username ? `@${user.username as string}` : (user?.firstName as string) ?? '—'}
                   </td>
                   <td className="px-4 py-3 text-gray-500">{s.gateway as string}</td>
                   <td className="px-4 py-3">

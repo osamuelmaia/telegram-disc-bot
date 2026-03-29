@@ -70,7 +70,7 @@ export default async function OrdersPage({
                   </td>
                   <td className="px-4 py-3 text-gray-700">{product?.name as string ?? '—'}</td>
                   <td className="px-4 py-3 text-gray-600">
-                    {user?.username ? `@${user.username}` : user?.firstName ?? (o.userId as string).slice(0, 8)}
+                    {user?.username ? `@${user.username as string}` : (user?.firstName as string) ?? (o.userId as string).slice(0, 8)}
                   </td>
                   <td className="px-4 py-3 text-right text-gray-900 font-medium">
                     R$ {parseFloat(o.amount as string).toFixed(2)}
