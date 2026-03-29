@@ -99,6 +99,71 @@ export class WalletService {
     );
   }
 
+  /**
+   * Credita o valor líquido de uma fatura de assinatura (Stripe) na carteira do tenant.
+   * Idêntico ao creditSale, mas a entrada de ledger é vinculada ao subscriptionPaymentId.
+   */
+  async creditSubscriptionPayment(
+    tenantId: string,
+    subscriptionPaymentId: string,
+    grossAmount: Decimal,
+    feeAmount: Decimal,
+  ): Promise<void> {
+    const netAmount = grossAmount.minus(feeAmount);
+
+    await this.prisma.$transaction(
+      async (tx) => {
+        await tx.wallet.upsert({
+          where: { tenantId },
+          create: { tenantId, balance: 0, totalReceived: 0, totalFees: 0, totalWithdrawn: 0 },
+          update: {},
+        });
+
+        const wallet = await tx.wallet.findUniqueOrThrow({ where: { tenantId } });
+        const balanceBefore = new Decimal(wallet.balance.toString());
+        const balanceAfter = balanceBefore.plus(netAmount);
+
+        await tx.walletTransaction.create({
+          data: {
+            walletId: wallet.id,
+            type: WalletTransactionType.CREDIT_SALE,
+            amount: grossAmount,
+            balanceBefore,
+            balanceAfter,
+            description: `Assinatura #${subscriptionPaymentId.substring(0, 8)}`,
+            subscriptionPaymentId,
+          },
+        });
+
+        await tx.walletTransaction.create({
+          data: {
+            walletId: wallet.id,
+            type: WalletTransactionType.DEBIT_PLATFORM_FEE,
+            amount: feeAmount.negated(),
+            balanceBefore,
+            balanceAfter,
+            description: `Taxa plataforma - Assinatura #${subscriptionPaymentId.substring(0, 8)}`,
+            subscriptionPaymentId,
+          },
+        });
+
+        await tx.wallet.update({
+          where: { id: wallet.id },
+          data: {
+            balance: balanceAfter,
+            totalReceived: { increment: grossAmount },
+            totalFees: { increment: feeAmount },
+          },
+        });
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+    );
+
+    this.logger.log(
+      `[${tenantId}] Subscription payment credited — gross=${grossAmount} fee=${feeAmount} net=${netAmount} payment=${subscriptionPaymentId}`,
+    );
+  }
+
   async getTransactions(tenantId: string, take = 50) {
     const wallet = await this.getOrCreateWallet(tenantId);
     return this.prisma.walletTransaction.findMany({

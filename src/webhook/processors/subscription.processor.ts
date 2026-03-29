@@ -1,7 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { AccessStatus, PaymentStatus, SubscriptionStatus } from '@prisma/client';
+import { Decimal } from '@prisma/client/runtime/library';
 import { PrismaService } from '../../prisma/prisma.service';
+import { WalletService } from '../../wallet/wallet.service';
 import {
   InvoiceFailedData,
   InvoicePaidData,
@@ -38,6 +40,7 @@ export class SubscriptionWebhookProcessor implements IWebhookProcessor {
   constructor(
     private readonly prisma: PrismaService,
     private readonly events: EventEmitter2,
+    private readonly walletService: WalletService,
   ) {}
 
   canHandle(eventType: WebhookEventType): boolean {
@@ -271,11 +274,24 @@ export class SubscriptionWebhookProcessor implements IWebhookProcessor {
       return;
     }
 
-    await this.prisma.subscriptionPayment.create({
+    // Calcula taxa da plataforma para este tenant
+    const platformConfig = await this.prisma.platformConfig.findFirst();
+    const tenant = await this.prisma.tenant.findUniqueOrThrow({
+      where: { id: subscription.tenantId },
+      select: { platformFeePercent: true },
+    });
+    const feePercent = (tenant.platformFeePercent ?? platformConfig?.defaultFeePercent ?? new Decimal('0.05')) as Decimal;
+    const grossAmount = new Decimal(data.amount.toString());
+    const feeAmount = grossAmount.mul(feePercent).toDecimalPlaces(2);
+    const netAmount = grossAmount.minus(feeAmount);
+
+    const payment = await this.prisma.subscriptionPayment.create({
       data: {
         subscriptionId: subscription.id,
         gatewayInvoiceId: data.gatewayInvoiceId,
-        amount: data.amount,
+        amount: grossAmount,
+        platformFeeAmount: feeAmount,
+        netAmount,
         currency: 'BRL',
         status: PaymentStatus.PAID,
         paidAt: data.paidAt,
@@ -285,6 +301,20 @@ export class SubscriptionWebhookProcessor implements IWebhookProcessor {
     this.logger.log(
       `[wh:${wh}] Invoice ${data.gatewayInvoiceId} recorded — amount=${data.amount} sub=${subscription.id}`,
     );
+
+    // Credita a carteira do tenant
+    try {
+      await this.walletService.creditSubscriptionPayment(
+        subscription.tenantId,
+        payment.id,
+        grossAmount,
+        feeAmount,
+      );
+    } catch (walletErr) {
+      this.logger.error(
+        `[wh:${wh}] Failed to credit wallet for invoice ${data.gatewayInvoiceId}: ${walletErr}`,
+      );
+    }
 
     const payload: InvoicePaidEvent = {
       subscriptionId: subscription.id,
