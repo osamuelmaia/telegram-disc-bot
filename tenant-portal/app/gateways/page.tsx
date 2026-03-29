@@ -61,7 +61,7 @@ export default async function GatewaysPage() {
             >
               Salvar EFI
             </button>
-            {efi.active && (
+            {!!efi.active && (
               <span className="text-xs text-green-700 bg-green-100 px-2 py-1 rounded-full">Ativo</span>
             )}
           </div>
@@ -98,7 +98,7 @@ export default async function GatewaysPage() {
             >
               Salvar Stripe
             </button>
-            {stripe.active && (
+            {!!stripe.active && (
               <span className="text-xs text-green-700 bg-green-100 px-2 py-1 rounded-full">Ativo</span>
             )}
           </div>

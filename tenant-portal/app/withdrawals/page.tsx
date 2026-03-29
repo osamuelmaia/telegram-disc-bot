@@ -65,7 +65,7 @@ export default async function WithdrawalsPage({
                   </td>
                   <td className="px-4 py-3 text-gray-600 font-mono text-xs">
                     {(w.pixKeyValue as string) ?? '—'}
-                    {w.pixKeyType && (
+                    {!!w.pixKeyType && (
                       <span className="ml-1 text-gray-400">({w.pixKeyType as string})</span>
                     )}
                   </td>
