@@ -82,10 +82,10 @@ export const getProducts = (params: Record<string, string> = {}) => {
   return apiFetch<PaginatedResult<Product>>(`/admin/products${qs ? `?${qs}` : ''}`);
 };
 
-export const createProduct = (body: Partial<Product>) =>
+export const createProduct = (body: Record<string, unknown>) =>
   apiFetch<Product>('/admin/products', { method: 'POST', body: JSON.stringify(body) });
 
-export const updateProduct = (id: string, body: Partial<Product>) =>
+export const updateProduct = (id: string, body: Record<string, unknown>) =>
   apiFetch<Product>(`/admin/products/${id}`, { method: 'PATCH', body: JSON.stringify(body) });
 
 export const deleteProduct = (id: string) =>
