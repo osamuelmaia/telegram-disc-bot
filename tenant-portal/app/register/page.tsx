@@ -1,7 +1,7 @@
 import Link from 'next/link';
-import { loginAction } from '@/lib/actions';
+import { registerAction } from '@/lib/actions';
 
-export default function LoginPage({
+export default function RegisterPage({
   searchParams,
 }: {
   searchParams: { error?: string };
@@ -16,15 +16,23 @@ export default function LoginPage({
         </div>
         <div>
           <h2 className="text-4xl font-bold text-white leading-tight mb-4">
-            Venda no Telegram.<br />
-            <span className="text-indigo-400">Receba na hora.</span>
+            Comece a vender<br />
+            <span className="text-indigo-400">em 5 minutos.</span>
           </h2>
           <p className="text-gray-400 text-lg leading-relaxed">
-            Configure seu bot, cadastre produtos e receba pagamentos automáticos direto no Telegram.
+            Crie sua conta, conecte seu bot do Telegram e cadastre seus produtos. Simples assim.
           </p>
-          <div className="mt-10 space-y-3">
-            {['🤖 Bot Telegram configurado em minutos', '💳 Pix e Cartão integrados', '📊 Dashboard em tempo real'].map((f) => (
-              <div key={f} className="flex items-center gap-3 text-gray-300 text-sm">{f}</div>
+          <div className="mt-10 space-y-4">
+            {[
+              { step: '1', label: 'Crie sua conta' },
+              { step: '2', label: 'Conecte seu bot Telegram' },
+              { step: '3', label: 'Cadastre seus produtos' },
+              { step: '4', label: 'Comece a receber' },
+            ].map(({ step, label }) => (
+              <div key={step} className="flex items-center gap-3">
+                <div className="w-7 h-7 rounded-full bg-indigo-600/40 border border-indigo-500/50 flex items-center justify-center text-indigo-300 text-xs font-bold shrink-0">{step}</div>
+                <span className="text-gray-300 text-sm">{label}</span>
+              </div>
             ))}
           </div>
         </div>
@@ -41,24 +49,34 @@ export default function LoginPage({
           </div>
 
           <div className="mb-8">
-            <h1 className="text-2xl font-bold text-gray-900">Bem-vindo de volta</h1>
-            <p className="text-gray-500 mt-1">Entre na sua conta para continuar</p>
+            <h1 className="text-2xl font-bold text-gray-900">Criar sua conta</h1>
+            <p className="text-gray-500 mt-1">Grátis para começar</p>
           </div>
 
           {searchParams.error && (
             <div className="mb-6 rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700 flex items-center gap-2">
-              <span>⚠️</span> E-mail ou senha incorretos.
+              <span>⚠️</span>{' '}
+              {searchParams.error === 'exists' ? 'E-mail já cadastrado.' : 'Erro ao criar conta. Tente novamente.'}
             </div>
           )}
 
-          <form action={loginAction} className="space-y-5">
+          <form action={registerAction} className="space-y-5">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">Nome</label>
+              <input
+                name="name"
+                type="text"
+                required
+                placeholder="Seu nome"
+                className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all shadow-sm"
+              />
+            </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1.5">E-mail</label>
               <input
                 name="email"
                 type="email"
                 required
-                autoComplete="email"
                 placeholder="seu@email.com"
                 className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all shadow-sm"
               />
@@ -69,8 +87,8 @@ export default function LoginPage({
                 name="password"
                 type="password"
                 required
-                autoComplete="current-password"
-                placeholder="••••••••"
+                minLength={8}
+                placeholder="Mínimo 8 caracteres"
                 className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all shadow-sm"
               />
             </div>
@@ -78,14 +96,14 @@ export default function LoginPage({
               type="submit"
               className="w-full bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white rounded-xl py-3 text-sm font-semibold transition-all shadow-sm mt-2"
             >
-              Entrar
+              Criar conta grátis
             </button>
           </form>
 
           <p className="mt-6 text-center text-sm text-gray-500">
-            Não tem conta?{' '}
-            <Link href="/register" className="text-indigo-600 font-medium hover:underline">
-              Cadastre-se grátis
+            Já tem conta?{' '}
+            <Link href="/login" className="text-indigo-600 font-medium hover:underline">
+              Entrar
             </Link>
           </p>
         </div>

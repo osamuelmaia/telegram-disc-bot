@@ -7,6 +7,36 @@ import { API_BASE } from './api';
 
 // ── Auth ───────────────────────────────────────────────────────────────────────
 
+export async function registerAction(formData: FormData) {
+  const name = formData.get('name') as string;
+  const email = formData.get('email') as string;
+  const password = formData.get('password') as string;
+
+  const res = await fetch(`${API_BASE}/auth/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, email, password }),
+    signal: AbortSignal.timeout(8000),
+  });
+
+  if (!res.ok) {
+    const status = res.status === 409 ? 'exists' : '1';
+    redirect(`/register?error=${status}`);
+  }
+
+  const { access_token } = await res.json();
+
+  cookies().set('token', access_token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    maxAge: 60 * 60 * 24 * 7,
+    path: '/',
+  });
+
+  redirect('/');
+}
+
 export async function loginAction(formData: FormData) {
   const email = formData.get('email') as string;
   const password = formData.get('password') as string;
