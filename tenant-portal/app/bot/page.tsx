@@ -56,11 +56,11 @@ export default async function BotPage() {
         </form>
       </div>
 
-      {bot.username && (
+      {!!bot.username && (
         <p className="text-sm text-gray-500">
           Bot ativo:{' '}
           <a
-            href={`https://t.me/${bot.username}`}
+            href={`https://t.me/${bot.username as string}`}
             target="_blank"
             rel="noopener noreferrer"
             className="text-indigo-600 hover:underline"
