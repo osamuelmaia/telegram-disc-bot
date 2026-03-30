@@ -196,6 +196,20 @@ export async function deleteProductAction(id: string) {
   revalidatePath('/products');
 }
 
+export async function updatePixKeyAction(formData: FormData) {
+  const token = cookies().get('token')?.value ?? '';
+  await fetch(`${API_BASE}/dashboard/me`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({
+      pixKeyType: formData.get('pixKeyType') || undefined,
+      pixKeyValue: formData.get('pixKeyValue') || undefined,
+    }),
+    signal: AbortSignal.timeout(8000),
+  });
+  revalidatePath('/wallet');
+}
+
 // ── Carteira ──────────────────────────────────────────────────────────────────
 
 export async function requestWithdrawalAction(formData: FormData) {

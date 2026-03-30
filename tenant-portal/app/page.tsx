@@ -1,153 +1,236 @@
-import Link from 'next/link';
-import { getProfile, getWallet, getOrders, getSubscriptions } from '@/lib/api';
-import { updateProfileAction } from '@/lib/actions';
-import { Bot, CreditCard, Package, ArrowRight, TrendingUp, Users, RefreshCw } from 'lucide-react';
+import { getWallet, getOrders, getSubscriptions, getWalletTransactions } from '@/lib/api';
+import {
+  DollarSign,
+  TrendingUp,
+  RefreshCw,
+  Wallet,
+  CheckCircle,
+  AlertCircle,
+  Clock,
+  ArrowDownLeft,
+} from 'lucide-react';
+import SparklineChart from '@/components/SparklineChart';
+import PeriodSelector from '@/components/PeriodSelector';
 
 function fmt(val: number) {
   return val.toLocaleString('pt-BR', { minimumFractionDigits: 2 });
 }
 
-function QuickLink({ href, icon: Icon, label, description }: { href: string; icon: React.ElementType; label: string; description: string }) {
+function pct(num: number, den: number) {
+  if (den === 0) return '0';
+  return ((num / den) * 100).toFixed(1);
+}
+
+function MetricCard({
+  icon: Icon,
+  label,
+  value,
+  sub,
+  iconColor = 'text-slate-500',
+  iconBg = 'bg-slate-100',
+}: {
+  icon: React.ElementType;
+  label: string;
+  value: string;
+  sub?: string;
+  iconColor?: string;
+  iconBg?: string;
+}) {
   return (
-    <Link
-      href={href}
-      className="flex items-center gap-3 p-4 bg-white rounded-xl border border-gray-200 hover:border-indigo-300 hover:shadow-sm transition-all group"
-    >
-      <div className="w-9 h-9 rounded-lg bg-indigo-50 flex items-center justify-center shrink-0 group-hover:bg-indigo-100 transition-colors">
-        <Icon size={16} className="text-indigo-600" />
+    <div className="bg-white rounded-xl border border-gray-200 p-5 flex items-center gap-4">
+      <div className={`w-10 h-10 rounded-lg ${iconBg} flex items-center justify-center shrink-0`}>
+        <Icon size={18} className={iconColor} />
       </div>
-      <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium text-gray-900">{label}</p>
-        <p className="text-xs text-gray-500 truncate">{description}</p>
+      <div className="min-w-0">
+        <p className="text-xs text-gray-500 font-medium truncate">{label}</p>
+        <p className="text-xl font-bold text-gray-900 mt-0.5 tabular-nums">{value}</p>
+        {sub && <p className="text-xs text-gray-400 mt-0.5">{sub}</p>}
       </div>
-      <ArrowRight size={14} className="text-gray-400 shrink-0 group-hover:text-indigo-500 transition-colors" />
-    </Link>
+    </div>
   );
 }
 
-export default async function HomePage() {
-  const [profile, wallet, ordersRes, subsRes] = await Promise.all([
-    getProfile().catch(() => ({} as Record<string, unknown>)),
+const PERIOD_MS: Record<string, number> = {
+  today: 24 * 60 * 60 * 1000,
+  '7d': 7 * 24 * 60 * 60 * 1000,
+  '30d': 30 * 24 * 60 * 60 * 1000,
+};
+
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Record<string, string>;
+}) {
+  const period = (searchParams.period ?? 'today') as string;
+  const cutoff = Date.now() - (PERIOD_MS[period] ?? PERIOD_MS['today']);
+
+  const [wallet, ordersRes, subsRes, txRes] = await Promise.all([
     getWallet().catch(() => ({} as Record<string, unknown>)),
-    getOrders({ limit: '1' }).catch(() => ({ total: 0 })),
+    getOrders({ limit: '200' }).catch(() => ({ data: [], total: 0 })),
     getSubscriptions({ limit: '1', status: 'ACTIVE' }).catch(() => ({ total: 0 })),
+    getWalletTransactions({ limit: '500' }).catch(() => ({ data: [] })),
   ]);
 
-  const balance = typeof wallet.balance === 'string' ? parseFloat(wallet.balance) : 0;
-  const totalReceived = typeof wallet.totalReceived === 'string' ? parseFloat(wallet.totalReceived) : 0;
-  const totalOrders = Number((ordersRes as Record<string, unknown>).total ?? 0);
+  const balance = parseFloat((wallet.balance as string) ?? '0') || 0;
+  const totalReceived = parseFloat((wallet.totalReceived as string) ?? '0') || 0;
+  const totalWithdrawn = parseFloat((wallet.totalWithdrawn as string) ?? '0') || 0;
+
+  const allOrders = ((ordersRes as Record<string, unknown>).data as Record<string, unknown>[]) ?? [];
+  const totalOrdersAll = Number((ordersRes as Record<string, unknown>).total ?? 0);
+
+  // Filter orders by period
+  const periodOrders = allOrders.filter(
+    (o) => new Date(o.createdAt as string).getTime() >= cutoff,
+  );
+  const paidOrders = periodOrders.filter(
+    (o) => o.status === 'PAID' || o.status === 'DELIVERED',
+  ).length;
+  const pendingOrders = periodOrders.filter((o) => o.status === 'PENDING').length;
+
   const totalSubs = Number((subsRes as Record<string, unknown>).total ?? 0);
 
-  const name = (profile.name as string) ?? 'Parceiro';
-  const hasBot = !!(profile as Record<string, unknown>).botId;
-  const hasGateway = false; // will show setup prompt if needed
+  // Wallet transactions filtered by period → chart data
+  const allTxs = ((txRes as Record<string, unknown>).data as Record<string, unknown>[]) ?? [];
+  const creditTxs = allTxs
+    .filter(
+      (t) =>
+        (t.type as string).startsWith('CREDIT') &&
+        new Date(t.createdAt as string).getTime() >= cutoff,
+    )
+    .sort((a, b) => new Date(a.createdAt as string).getTime() - new Date(b.createdAt as string).getTime());
+
+  // Cumulative revenue for chart
+  let cum = 0;
+  const chartPoints = creditTxs.map((t) => ({
+    x: new Date(t.createdAt as string).getTime(),
+    y: (cum += parseFloat(t.amount as string) || 0),
+  }));
+
+  // Period revenue = sum of credits in period
+  const periodRevenue = creditTxs.reduce((s, t) => s + (parseFloat(t.amount as string) || 0), 0);
+
+  const approvalRate = pct(paidOrders, periodOrders.length);
+  const netAmount = totalReceived - totalWithdrawn;
+
+  const periodLabel = period === 'today' ? 'hoje' : period === '7d' ? 'nos últimos 7 dias' : 'nos últimos 30 dias';
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-5">
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">Olá, {name.split(' ')[0]} 👋</h1>
-        <p className="text-sm text-gray-500 mt-1">Aqui está o resumo da sua conta.</p>
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
+        <PeriodSelector current={period} />
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <div className="bg-white rounded-xl border border-gray-200 p-5 col-span-2 sm:col-span-1">
-          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Saldo disponível</p>
-          <p className="text-2xl font-bold text-gray-900 mt-1">R$ {fmt(balance)}</p>
-          <Link href="/wallet" className="text-xs text-indigo-600 hover:underline mt-1 inline-block">Ver carteira →</Link>
-        </div>
-        <div className="bg-white rounded-xl border border-gray-200 p-5">
-          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Total recebido</p>
-          <p className="text-2xl font-bold text-gray-900 mt-1">R$ {fmt(totalReceived)}</p>
-        </div>
-        <div className="bg-white rounded-xl border border-gray-200 p-5">
-          <div className="flex items-center gap-2 mb-1">
-            <TrendingUp size={13} className="text-gray-400" />
-            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Pedidos</p>
+      {/* Main grid: chart (left) + metric cards (right) */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        {/* Chart card */}
+        <div className="lg:col-span-2 bg-white rounded-xl border border-gray-200 p-6">
+          <div className="flex items-start justify-between mb-1">
+            <div>
+              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+                Faturamento bruto
+              </p>
+              <p className="text-3xl font-bold text-gray-900 mt-1 tabular-nums">
+                R$ {fmt(periodRevenue)}
+              </p>
+              <p className="text-xs text-gray-400 mt-0.5">{periodLabel}</p>
+            </div>
+            <span className="text-xs text-gray-400 font-mono tabular-nums">
+              R$ {fmt(periodRevenue)}
+            </span>
           </div>
-          <p className="text-2xl font-bold text-gray-900">{totalOrders}</p>
-          <Link href="/sales" className="text-xs text-indigo-600 hover:underline mt-1 inline-block">Ver vendas →</Link>
-        </div>
-        <div className="bg-white rounded-xl border border-gray-200 p-5">
-          <div className="flex items-center gap-2 mb-1">
-            <RefreshCw size={13} className="text-gray-400" />
-            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Assinaturas</p>
-          </div>
-          <p className="text-2xl font-bold text-gray-900">{totalSubs}</p>
-          <Link href="/sales?tab=subscriptions" className="text-xs text-indigo-600 hover:underline mt-1 inline-block">Ver assinaturas →</Link>
-        </div>
-      </div>
 
-      {/* Quick setup links */}
-      <div>
-        <h2 className="text-sm font-semibold text-gray-700 mb-3">Configurações rápidas</h2>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <QuickLink
-            href="/bot"
-            icon={Bot}
-            label="Meu Bot"
-            description="Configure o token e mensagem de boas-vindas"
-          />
-          <QuickLink
-            href="/gateways"
-            icon={CreditCard}
-            label="Pagamentos"
-            description="Conecte EFI ou Stripe para receber"
-          />
-          <QuickLink
-            href="/products"
-            icon={Package}
-            label="Produtos"
-            description="Crie e gerencie seus produtos"
-          />
-        </div>
-      </div>
-
-      {/* Profile quick edit */}
-      <div className="bg-white rounded-xl border border-gray-200 p-6 max-w-lg">
-        <h2 className="text-sm font-semibold text-gray-900 mb-4">Perfil rápido</h2>
-        <form action={updateProfileAction} className="space-y-4">
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Nome</label>
-            <input
-              name="name"
-              defaultValue={(profile.name as string) ?? ''}
-              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
+          <div className="h-36 mt-5">
+            <SparklineChart
+              points={
+                chartPoints.length >= 2
+                  ? chartPoints
+                  : [
+                      { x: cutoff, y: 0 },
+                      { x: Date.now(), y: 0 },
+                    ]
+              }
             />
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Tipo de chave Pix</label>
-              <select
-                name="pixKeyType"
-                defaultValue={(profile.pixKeyType as string) ?? ''}
-                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500 bg-white transition-all"
-              >
-                <option value="">Selecione</option>
-                <option value="CPF">CPF</option>
-                <option value="CNPJ">CNPJ</option>
-                <option value="EMAIL">E-mail</option>
-                <option value="PHONE">Telefone</option>
-                <option value="RANDOM">Aleatória</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Chave Pix</label>
-              <input
-                name="pixKeyValue"
-                defaultValue={(profile.pixKeyValue as string) ?? ''}
-                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
-              />
-            </div>
+
+          <div className="flex justify-between text-xs text-gray-400 mt-2">
+            <span>
+              {new Date(cutoff).toLocaleString('pt-BR', {
+                day: '2-digit',
+                month: '2-digit',
+                hour: period === 'today' ? '2-digit' : undefined,
+                minute: period === 'today' ? '2-digit' : undefined,
+              })}
+            </span>
+            <span>
+              {new Date().toLocaleString('pt-BR', {
+                day: '2-digit',
+                month: '2-digit',
+                hour: period === 'today' ? '2-digit' : undefined,
+                minute: period === 'today' ? '2-digit' : undefined,
+              })}
+            </span>
           </div>
-          <button
-            type="submit"
-            className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg px-4 py-2 text-sm font-medium transition-colors"
-          >
-            Salvar alterações
-          </button>
-        </form>
+        </div>
+
+        {/* Right cards */}
+        <div className="flex flex-col gap-4">
+          <MetricCard
+            icon={DollarSign}
+            label="Valor líquido"
+            value={`R$ ${fmt(netAmount)}`}
+            sub="Após taxas e saques"
+            iconBg="bg-green-50"
+            iconColor="text-green-600"
+          />
+          <MetricCard
+            icon={TrendingUp}
+            label="Vendas"
+            value={String(periodOrders.length)}
+            sub={`${paidOrders} aprovadas`}
+            iconBg="bg-blue-50"
+            iconColor="text-blue-600"
+          />
+          <MetricCard
+            icon={RefreshCw}
+            label="Assinaturas ativas"
+            value={String(totalSubs)}
+            iconBg="bg-purple-50"
+            iconColor="text-purple-600"
+          />
+        </div>
+      </div>
+
+      {/* Bottom stats grid */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <MetricCard
+          icon={CheckCircle}
+          label="Taxa de aprovação"
+          value={`${approvalRate} %`}
+          iconBg="bg-green-50"
+          iconColor="text-green-600"
+        />
+        <MetricCard
+          icon={Wallet}
+          label="Saldo disponível"
+          value={`R$ ${fmt(balance)}`}
+          sub="Para saque"
+        />
+        <MetricCard
+          icon={Clock}
+          label="Pedidos pendentes"
+          value={String(pendingOrders)}
+          sub={periodLabel}
+          iconBg="bg-yellow-50"
+          iconColor="text-yellow-600"
+        />
+        <MetricCard
+          icon={ArrowDownLeft}
+          label="Total sacado"
+          value={`R$ ${fmt(totalWithdrawn)}`}
+          sub={`de ${totalOrdersAll} pedidos`}
+        />
       </div>
     </div>
   );

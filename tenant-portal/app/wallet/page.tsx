@@ -1,7 +1,8 @@
 import Link from 'next/link';
-import { getWallet, getWalletTransactions, getWithdrawals } from '@/lib/api';
+import { getWallet, getWalletTransactions, getWithdrawals, getProfile } from '@/lib/api';
 import { requestWithdrawalAction } from '@/lib/actions';
 import { Badge } from '@/components/Badge';
+import PixKeyModal from '@/components/PixKeyModal';
 
 type Variant = 'green' | 'yellow' | 'red' | 'blue' | 'gray' | 'purple';
 
@@ -62,15 +63,19 @@ export default async function WalletPage({
   const tab = searchParams.tab === 'withdrawals' ? 'withdrawals' : 'balance';
   const page = searchParams.page ?? '1';
 
-  const [wallet, txRes, withdrawalsRes] = await Promise.all([
+  const [wallet, txRes, withdrawalsRes, profile] = await Promise.all([
     getWallet().catch(() => ({} as Record<string, unknown>)),
     getWalletTransactions({ page: tab === 'balance' ? page : '1', limit: '20' }).catch(() => ({ data: [], total: 0, pages: 1 })),
     getWithdrawals({ page: tab === 'withdrawals' ? page : '1', limit: '20' }).catch(() => ({ data: [], total: 0, pages: 1 })),
+    getProfile().catch(() => ({} as Record<string, unknown>)),
   ]);
 
   const balance = typeof wallet.balance === 'string' ? parseFloat(wallet.balance) : 0;
   const totalReceived = typeof wallet.totalReceived === 'string' ? parseFloat(wallet.totalReceived) : 0;
   const totalWithdrawn = typeof wallet.totalWithdrawn === 'string' ? parseFloat(wallet.totalWithdrawn) : 0;
+
+  const pixKeyType = (profile as Record<string, unknown>).pixKeyType as string | undefined;
+  const pixKeyValue = (profile as Record<string, unknown>).pixKeyValue as string | undefined;
 
   const txs = (txRes as Record<string, unknown>).data as Record<string, unknown>[];
   const txPages = (txRes as Record<string, unknown>).pages as number;
@@ -89,7 +94,7 @@ export default async function WalletPage({
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-white rounded-xl border border-gray-200 p-5">
           <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Saldo disponível</p>
           <p className="text-3xl font-bold text-gray-900 mt-1">R$ {fmt(balance)}</p>
@@ -104,6 +109,23 @@ export default async function WalletPage({
           <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Total sacado</p>
           <p className="text-3xl font-bold text-gray-900 mt-1">R$ {fmt(totalWithdrawn)}</p>
           <p className="text-xs text-gray-400 mt-1">{wTotal} saque{wTotal !== 1 ? 's' : ''} realizado{wTotal !== 1 ? 's' : ''}</p>
+        </div>
+        {/* Pix key card */}
+        <div className="bg-white rounded-xl border border-gray-200 p-5 flex flex-col justify-between">
+          <div>
+            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Chave Pix (saques)</p>
+            {pixKeyValue ? (
+              <>
+                <p className="text-sm font-semibold text-gray-900 mt-1 truncate">{pixKeyValue}</p>
+                <p className="text-xs text-gray-400 mt-0.5">{pixKeyType}</p>
+              </>
+            ) : (
+              <p className="text-sm text-gray-400 mt-1">Não configurada</p>
+            )}
+          </div>
+          <div className="mt-3">
+            <PixKeyModal pixKeyType={pixKeyType} pixKeyValue={pixKeyValue} />
+          </div>
         </div>
       </div>
 
