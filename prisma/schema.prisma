@@ -106,6 +106,19 @@ model PlatformConfig {
   @@map("platform_config")
 }
 
+// Credenciais de gateway centralizadas — gerenciadas pelo admin, usadas por todos os tenants.
+model PlatformGatewayConfig {
+  id          String         @id @default(cuid())
+  gateway     PaymentGateway @unique
+  active      Boolean        @default(true)
+  credentials String         // JSON criptografado com AES-256-GCM
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("platform_gateway_configs")
+}
+
 // =============================================================================
 // TENANT
 // =============================================================================

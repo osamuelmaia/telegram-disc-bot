@@ -34,21 +34,32 @@ export class GatewayFactoryService {
       return this.cache.get(cacheKey)!;
     }
 
-    const config = await this.prisma.paymentGatewayConfig.findUnique({
+    // 1. Tenta config específica do tenant
+    const tenantConfig = await this.prisma.paymentGatewayConfig.findUnique({
       where: { tenantId_gateway: { tenantId, gateway: type } },
+      select: { credentials: true, active: true },
     });
 
-    if (!config || !config.active) {
-      throw new NotFoundException(
-        `No active ${type} gateway configured for tenant ${tenantId}`,
-      );
+    // 2. Fallback para config centralizada da plataforma
+    const platformConfig =
+      !tenantConfig?.active
+        ? await this.prisma.platformGatewayConfig.findUnique({
+            where: { gateway: type },
+            select: { credentials: true, active: true },
+          })
+        : null;
+
+    const resolved = tenantConfig?.active ? tenantConfig : platformConfig?.active ? platformConfig : null;
+
+    if (!resolved) {
+      throw new NotFoundException(`No active ${type} gateway configured`);
     }
 
-    const credentials = JSON.parse(this.crypto.decrypt(config.credentials));
+    const credentials = JSON.parse(this.crypto.decrypt(resolved.credentials));
     const gateway = this.buildGateway(type, credentials);
 
     this.cache.set(cacheKey, gateway);
-    this.logger.debug(`[${tenantId}] ${type} gateway instance created and cached`);
+    this.logger.debug(`[${tenantId}] ${type} gateway resolved (${tenantConfig?.active ? 'tenant' : 'platform'})`);
 
     return gateway;
   }
