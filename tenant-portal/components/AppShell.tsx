@@ -5,7 +5,6 @@ import { usePathname } from 'next/navigation';
 import {
   LayoutDashboard,
   Bot,
-  CreditCard,
   Package,
   ShoppingBag,
   Wallet,
@@ -19,7 +18,6 @@ import OnboardingBanner from './OnboardingBanner';
 const NAV: { href: string; label: string; icon: LucideIcon }[] = [
   { href: '/', label: 'Visão Geral', icon: LayoutDashboard },
   { href: '/bot', label: 'Meu Bot', icon: Bot },
-  { href: '/gateways', label: 'Pagamentos', icon: CreditCard },
   { href: '/products', label: 'Produtos', icon: Package },
   { href: '/sales', label: 'Vendas', icon: ShoppingBag },
   { href: '/wallet', label: 'Carteira', icon: Wallet },

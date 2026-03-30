@@ -1,5 +1,18 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import {
+  LayoutDashboard,
+  Building2,
+  ClipboardList,
+  RefreshCw,
+  Users,
+  Package,
+  KeyRound,
+  Zap,
+  Landmark,
+  Settings,
+  CreditCard,
+} from 'lucide-react';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -8,16 +21,17 @@ export const metadata: Metadata = {
 };
 
 const NAV = [
-  { href: '/', label: 'Dashboard', icon: '📊' },
-  { href: '/tenants', label: 'Parceiros', icon: '🏢' },
-  { href: '/orders', label: 'Pedidos', icon: '🧾' },
-  { href: '/subscriptions', label: 'Assinaturas', icon: '🔄' },
-  { href: '/customers', label: 'Clientes', icon: '👥' },
-  { href: '/products', label: 'Produtos', icon: '📦' },
-  { href: '/accesses', label: 'Acessos', icon: '🔑' },
-  { href: '/webhooks', label: 'Webhooks', icon: '⚡' },
-  { href: '/withdrawals', label: 'Saques', icon: '🏦' },
-  { href: '/config', label: 'Configurações', icon: '⚙️' },
+  { href: '/', label: 'Dashboard', icon: LayoutDashboard },
+  { href: '/tenants', label: 'Parceiros', icon: Building2 },
+  { href: '/orders', label: 'Pedidos', icon: ClipboardList },
+  { href: '/subscriptions', label: 'Assinaturas', icon: RefreshCw },
+  { href: '/customers', label: 'Clientes', icon: Users },
+  { href: '/products', label: 'Produtos', icon: Package },
+  { href: '/accesses', label: 'Acessos', icon: KeyRound },
+  { href: '/webhooks', label: 'Webhooks', icon: Zap },
+  { href: '/withdrawals', label: 'Saques', icon: Landmark },
+  { href: '/gateways', label: 'Gateways', icon: CreditCard },
+  { href: '/config', label: 'Configurações', icon: Settings },
 ];
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -32,13 +46,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <p className="mt-0.5 text-sm font-semibold text-white">Sales Bot</p>
             </div>
             <nav className="flex-1 py-4 space-y-0.5 px-2">
-              {NAV.map(({ href, label, icon }) => (
+              {NAV.map(({ href, label, icon: Icon }) => (
                 <Link
                   key={href}
                   href={href}
                   className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-slate-300 hover:bg-slate-700 hover:text-white transition-colors"
                 >
-                  <span className="text-base">{icon}</span>
+                  <Icon size={15} className="shrink-0 opacity-80" />
                   {label}
                 </Link>
               ))}
