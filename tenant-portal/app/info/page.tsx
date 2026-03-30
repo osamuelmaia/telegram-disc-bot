@@ -103,7 +103,7 @@ export default async function InfoPage() {
               <p className="text-gray-500">{profile.personType === 'PF' ? 'CPF' : 'CNPJ'}</p>
               <p className="font-medium text-gray-900 mt-0.5">{profile.document as string}</p>
             </div>
-            {profile.birthDate && (
+            {!!profile.birthDate && (
               <div>
                 <p className="text-gray-500">Data de nascimento</p>
                 <p className="font-medium text-gray-900 mt-0.5">{profile.birthDate as string}</p>
