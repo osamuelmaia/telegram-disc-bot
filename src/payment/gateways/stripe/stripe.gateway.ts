@@ -113,7 +113,7 @@ export class StripeGateway implements IPaymentGateway {
 
   // ── Webhook ───────────────────────────────────────────────────────────────
 
-  parseWebhookEvent(rawBody: Buffer | string, headers: Record<string, string>): ParsedWebhookEvent {
+  parseWebhookEvent(rawBody: Buffer | string, headers: Record<string, string>): ParsedWebhookEvent[] {
     const signature = headers['stripe-signature'];
 
     if (!signature) {
@@ -130,7 +130,7 @@ export class StripeGateway implements IPaymentGateway {
       throw new UnauthorizedException(`Invalid Stripe webhook signature: ${err}`);
     }
 
-    return this.normalizeStripeEvent(event);
+    return [this.normalizeStripeEvent(event)];
   }
 
   // ── Helpers privados ─────────────────────────────────────────────────────

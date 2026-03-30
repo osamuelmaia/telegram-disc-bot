@@ -161,8 +161,20 @@ export const rejectWithdrawal = (id: string, reason: string) =>
 
 // ── Platform Config ───────────────────────────────────────────────────────────
 
-export const getPlatformConfig = () =>
-  apiFetch<PlatformConfig>('/admin/config');
+// O backend armazena o campo como "defaultFeePercent"; o frontend usa "feePercent".
+// As funções abaixo fazem a tradução nos dois sentidos para não alterar o restante do código.
+export const getPlatformConfig = async (): Promise<PlatformConfig> => {
+  const raw = await apiFetch<Record<string, unknown>>('/admin/config');
+  return {
+    feePercent: (raw.defaultFeePercent as number) ?? 0,
+    minWithdrawalAmount: (raw.minWithdrawalAmount as number) ?? 0,
+    withdrawalPaymentDays: (raw.withdrawalPaymentDays as number) ?? 0,
+  };
+};
 
-export const updatePlatformConfig = (body: Partial<PlatformConfig>) =>
-  apiFetch<PlatformConfig>('/admin/config', { method: 'PATCH', body: JSON.stringify(body) });
+export const updatePlatformConfig = (body: Partial<PlatformConfig>) => {
+  const { feePercent, ...rest } = body as Record<string, unknown>;
+  const payload: Record<string, unknown> = { ...rest };
+  if (feePercent !== undefined) payload.defaultFeePercent = feePercent;
+  return apiFetch<PlatformConfig>('/admin/config', { method: 'PATCH', body: JSON.stringify(payload) });
+};

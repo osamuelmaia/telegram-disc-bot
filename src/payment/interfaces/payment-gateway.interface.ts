@@ -217,5 +217,5 @@ export interface IPaymentGateway {
   parseWebhookEvent(
     rawBody: Buffer | string,
     headers: Record<string, string>,
-  ): ParsedWebhookEvent;
+  ): ParsedWebhookEvent[];
 }

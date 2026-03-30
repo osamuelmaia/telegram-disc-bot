@@ -45,31 +45,34 @@ export class WebhookService {
   ): Promise<void> {
     const gatewayInstance = await this.gatewayFactory.getGateway(tenantId, gateway);
 
-    let parsed: ReturnType<IPaymentGateway['parseWebhookEvent']>;
+    let events: ReturnType<IPaymentGateway['parseWebhookEvent']>;
 
     try {
-      parsed = gatewayInstance.parseWebhookEvent(rawBody, headers);
+      events = gatewayInstance.parseWebhookEvent(rawBody, headers);
     } catch (err) {
       throw err; // Assinatura inválida — propaga 4xx
     }
 
     const rawPayloadForStorage = this.sanitizeForStorage(rawBody);
 
-    const { skip, record } = await this.idempotency.tryAcquire(
-      gateway,
-      parsed.eventId,
-      parsed.eventType,
-      rawPayloadForStorage,
-      tenantId,
-    );
+    // Processa cada evento do batch sequencialmente (EFI pode enviar vários pix em um POST).
+    for (const parsed of events) {
+      const { skip, record } = await this.idempotency.tryAcquire(
+        gateway,
+        parsed.eventId,
+        parsed.eventType,
+        rawPayloadForStorage,
+        tenantId,
+      );
 
-    if (skip || !record) return;
+      if (skip || !record) continue;
 
-    await this.dispatch(
-      parsed.eventType,
-      () => this.resolveProcessor(parsed.eventType)?.handle(parsed, record.id),
-      record,
-    );
+      await this.dispatch(
+        parsed.eventType,
+        () => this.resolveProcessor(parsed.eventType)?.handle(parsed, record.id),
+        record,
+      );
+    }
   }
 
   async retryFailed(webhookEventId: string): Promise<void> {

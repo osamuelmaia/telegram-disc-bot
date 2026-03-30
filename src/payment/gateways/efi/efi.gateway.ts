@@ -161,7 +161,7 @@ export class EfiGateway implements IPaymentGateway {
 
   // ── Webhook ───────────────────────────────────────────────────────────────
 
-  parseWebhookEvent(rawBody: Buffer | string, headers: Record<string, string>): ParsedWebhookEvent {
+  parseWebhookEvent(rawBody: Buffer | string, headers: Record<string, string>): ParsedWebhookEvent[] {
     // O Efí Bank não usa assinatura HMAC por padrão — usa mTLS para autenticar o sender.
     // Se o webhookSecret estiver configurado, valida o header x-webhook-secret.
     if (this.config.webhookSecret) {
@@ -176,20 +176,16 @@ export class EfiGateway implements IPaymentGateway {
         ? JSON.parse(rawBody)
         : JSON.parse(rawBody.toString('utf-8'));
 
-    // O Efí pode enviar múltiplos pagamentos em um único POST.
-    // Processamos apenas o primeiro para simplificar — em produção, iterar sobre todos.
-    const pixPayment = body.pix?.[0];
-
-    if (!pixPayment) {
-      return {
+    if (!body.pix?.length) {
+      return [{
         eventId: `efi-empty-${Date.now()}`,
         eventType: 'unknown',
         data: { type: 'unknown' },
-      };
+      }];
     }
 
-    return {
-      // Efí não tem um ID de evento dedicado — usamos o endToEndId como chave de idempotência
+    // Itera sobre todos os pagamentos do batch — cada endToEndId é a chave de idempotência.
+    return body.pix.map((pixPayment) => ({
       eventId: pixPayment.endToEndId,
       eventType: 'pix.paid',
       data: {
@@ -199,7 +195,7 @@ export class EfiGateway implements IPaymentGateway {
         amount: parseFloat(pixPayment.valor),
         paidAt: new Date(pixPayment.horario),
       },
-    };
+    }));
   }
 
   // ── Helpers privados ──────────────────────────────────────────────────────
