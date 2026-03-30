@@ -99,3 +99,19 @@ export async function updatePlatformConfigAction(formData: FormData) {
   });
   revalidatePath('/config');
 }
+
+export async function upsertPlatformGatewayAction(type: string, formData: FormData) {
+  const credentials: Record<string, string> = {};
+  for (const [key, value] of formData.entries()) {
+    if (typeof value === 'string' && value) {
+      credentials[key] = value;
+    }
+  }
+  await api.upsertPlatformGateway(type, credentials);
+  revalidatePath('/gateways');
+}
+
+export async function setPlatformGatewayActiveAction(type: string, active: boolean) {
+  await api.setPlatformGatewayActive(type, active);
+  revalidatePath('/gateways');
+}

@@ -1,9 +1,10 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { AccessStatus, OrderStatus, Prisma, SubscriptionStatus, TenantStatus, WithdrawalStatus } from '@prisma/client';
+import { AccessStatus, OrderStatus, PaymentGateway, Prisma, SubscriptionStatus, TenantStatus, WithdrawalStatus } from '@prisma/client';
 import { PaginatedResult, paginate } from '../common/dto/paginated-result.type';
 import { WalletService } from '../wallet/wallet.service';
 import { PaginationDto } from '../common/dto/pagination.dto';
 import { PrismaService } from '../prisma/prisma.service';
+import { FieldEncryptionService } from '../common/crypto/field-encryption.service';
 
 // ── Filters ─────────────────────────────────────────────────────────────────
 
@@ -44,6 +45,7 @@ export class AdminService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly walletService: WalletService,
+    private readonly crypto: FieldEncryptionService,
   ) {}
 
   // ── Dashboard ──────────────────────────────────────────────────────────────
@@ -394,6 +396,32 @@ export class AdminService {
 
   updatePlatformConfig(dto: { defaultFeePercent?: number; minWithdrawalAmount?: number; notificationEmail?: string }) {
     return this.prisma.platformConfig.updateMany({ data: dto as any });
+  }
+
+  // ── Platform Gateways ─────────────────────────────────────────────────────
+
+  getPlatformGateways() {
+    return this.prisma.platformGatewayConfig.findMany({
+      select: { id: true, gateway: true, active: true, updatedAt: true },
+    });
+  }
+
+  upsertPlatformGateway(type: PaymentGateway, credentials: Record<string, unknown>) {
+    const encrypted = this.crypto.encrypt(JSON.stringify(credentials));
+    return this.prisma.platformGatewayConfig.upsert({
+      where: { gateway: type },
+      create: { gateway: type, credentials: encrypted, active: true },
+      update: { credentials: encrypted, active: true, updatedAt: new Date() },
+      select: { id: true, gateway: true, active: true },
+    });
+  }
+
+  setPlatformGatewayActive(type: PaymentGateway, active: boolean) {
+    return this.prisma.platformGatewayConfig.update({
+      where: { gateway: type },
+      data: { active },
+      select: { id: true, gateway: true, active: true },
+    });
   }
 
   // ── Saques ────────────────────────────────────────────────────────────────

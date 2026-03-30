@@ -178,3 +178,28 @@ export const updatePlatformConfig = (body: Partial<PlatformConfig>) => {
   if (feePercent !== undefined) payload.defaultFeePercent = feePercent;
   return apiFetch<PlatformConfig>('/admin/config', { method: 'PATCH', body: JSON.stringify(payload) });
 };
+
+// ── Platform Gateways ─────────────────────────────────────────────────────────
+
+export type PlatformGateway = {
+  id: string;
+  gateway: string;
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export const getPlatformGateways = () =>
+  apiFetch<PlatformGateway[]>('/admin/gateways');
+
+export const upsertPlatformGateway = (type: string, credentials: Record<string, string>) =>
+  apiFetch<PlatformGateway>(`/admin/gateways/${type}`, {
+    method: 'PUT',
+    body: JSON.stringify({ credentials }),
+  });
+
+export const setPlatformGatewayActive = (type: string, active: boolean) =>
+  apiFetch<PlatformGateway>(`/admin/gateways/${type}/active`, {
+    method: 'PATCH',
+    body: JSON.stringify({ active }),
+  });

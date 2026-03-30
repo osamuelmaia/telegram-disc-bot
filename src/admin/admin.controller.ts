@@ -7,6 +7,7 @@ import {
   Param,
   Patch,
   Post,
+  Put,
   Query,
   UseGuards,
 } from '@nestjs/common';
@@ -225,6 +226,29 @@ export class AdminController {
     @Body() body: { defaultFeePercent?: number; minWithdrawalAmount?: number; notificationEmail?: string },
   ) {
     return this.adminService.updatePlatformConfig(body);
+  }
+
+  // ── Platform Gateways ──────────────────────────────────────────────────────
+
+  @Get('gateways')
+  getPlatformGateways() {
+    return this.adminService.getPlatformGateways();
+  }
+
+  @Put('gateways/:type')
+  upsertPlatformGateway(
+    @Param('type') type: string,
+    @Body() body: { credentials: Record<string, unknown> },
+  ) {
+    return this.adminService.upsertPlatformGateway(type as any, body.credentials);
+  }
+
+  @Patch('gateways/:type/active')
+  setPlatformGatewayActive(
+    @Param('type') type: string,
+    @Body() body: { active: boolean },
+  ) {
+    return this.adminService.setPlatformGatewayActive(type as any, body.active);
   }
 
   // ── Saques ─────────────────────────────────────────────────────────────────
