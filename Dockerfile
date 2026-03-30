@@ -41,4 +41,4 @@ COPY --from=builder /app/dist ./dist
 EXPOSE 3000
 
 # migrate deploy garante que o banco está atualizado antes de iniciar
-CMD ["sh", "-c", "npx prisma migrate deploy && node dist/main"]
+CMD ["sh", "-c", "npx prisma db push --accept-data-loss --skip-generate && node dist/main"]
