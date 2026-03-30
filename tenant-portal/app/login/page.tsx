@@ -45,7 +45,7 @@ export default function LoginPage({
             <p className="text-gray-500 mt-1">Entre na sua conta para continuar</p>
           </div>
 
-          {searchParams.error && (
+          {!!searchParams.error && (
             <div className="mb-6 rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700 flex items-center gap-2">
               <span>⚠️</span> E-mail ou senha incorretos.
             </div>

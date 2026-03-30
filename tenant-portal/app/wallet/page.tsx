@@ -218,7 +218,7 @@ export default async function WalletPage({
                     <tr key={tx.id as string} className="hover:bg-gray-50 transition-colors">
                       <td className="px-4 py-3">
                         <Badge label={label} variant={variant} />
-                        {tx.description && (
+                        {!!tx.description && (
                           <p className="text-xs text-gray-400 mt-0.5">{tx.description as string}</p>
                         )}
                       </td>
